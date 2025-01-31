@@ -80,17 +80,21 @@ module Compiler
       @md.slice!(0, line.size)
       curr = String.new
       curr_push = lambda {
-        @tks << Token.new(:text, {text: curr})
+        @tks << Token.new(:text, {text: curr, bold: false, italic: false})
         curr = String.new
       }
       while !line.empty?
-        if (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*\*.+?\*\*|__.+?__)/, 1] # bold
+        if (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*{3}[^\*]+?\*{3}|_{3}[^_]+?_{3})/, 1] # bold and italic
           curr_push.call if !curr.empty?
-          @tks << Token.new(:bold, {text: match.gsub(/[\*_]/, '')})
+          @tks << Token.new(:text, {text: match.gsub(/[\*_]/, ''), bold: true, italic: true})
+          line.slice!(0, match.size)
+        elsif (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*{2}[^\*]+?\*{2}|_{2}[^_]+?_{2})/, 1] # bold
+          curr_push.call if !curr.empty?
+          @tks << Token.new(:text, {text: match.gsub(/[\*_]/, ''), bold: true, italic: false})
           line.slice!(0, match.size)
         elsif (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*[^\*]+?\*|_[^_]+?_)/, 1] # italic
           curr_push.call if !curr.empty?
-          @tks << Token.new(:italic, {text: match.gsub(/[\*_]/, '')})
+          @tks << Token.new(:text, {text: match.gsub(/[\*_]/, ''), bold: false, italic: true})
           line.slice!(0, match.size)
         elsif line.start_with?('[') && line =~ /\A(?:\[(.+?)\]\((.*?)\))/ # link
           curr_push.call if !curr.empty?
@@ -107,12 +111,26 @@ module Compiler
 
   class Parser
     
-    NodeRoot     = Struct.new(:children)
-    NodeHeader   = Struct.new(:size, :text)
-    NodePara     = Struct.new(:children)
-    NodeText     = Struct.new(:text, :bold, :italic)
-    NodeLink     = Struct.new(:text, :href)
-    NodeList     = Struct.new(:ordered, :children)
+    # TODO: add default values where appropriate
+    
+    NodeRoot = Struct.new(:children)
+
+    NodeHeader = Struct.new(:size, :text)
+
+    NodePara = Struct.new(:children)
+
+    NodeText = Struct.new(:text, :bold, :italic) do
+      def initialize(**kwargs)
+        super(**kwargs)
+        self.bold ||= false
+        self.italic ||= false
+      end
+    end
+
+    NodeLink = Struct.new(:text, :href)
+
+    NodeList = Struct.new(:ordered, :children)
+
     NodeListItem = Struct.new(:para, :children)
 
     def initialize(tks)
@@ -132,7 +150,7 @@ module Compiler
             parse_list
           elsif peek(:link)
             parse_link
-          elsif peek_any(:text, :bold, :italic)
+          elsif peek(:text)
             parse_paragraph
           else
             raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
@@ -188,14 +206,11 @@ module Compiler
     def parse_paragraph
       para = NodePara.new(children: [])
 
-      while peek_any(:text, :bold, :italic, :link)
+      while peek_any(:text, :link)
         para.children << (
           if peek(:text)
-            NodeText.new(text: consume(:text).attrs[:text])
-          elsif peek(:bold)
-            NodeText.new(text: consume(:bold).attrs[:text], bold: true)
-          elsif peek(:italic)
-            NodeText.new(text: consume(:italic).attrs[:text], italic: true)
+            consume(:text).attrs => {text:, bold:, italic:}
+            NodeText.new(text:, bold:, italic:)
           elsif peek(:link)
             parse_link
           else

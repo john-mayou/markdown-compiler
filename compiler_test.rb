@@ -64,7 +64,6 @@ module Compiler
       {md: '__text_', expected: '<p>_<i>text</i></p>'},
       {md: '*text**', expected: '<p><i>text</i>*</p>'},
       {md: '_text__', expected: '<p><i>text</i>_</p>'},
-      # TODO: add test cases for ***text***, ___text___
     ].each_with_index do |tc, i|
       define_method("test_compile_emphasis_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -82,6 +81,15 @@ module Compiler
       {md: 'text_', expected: '<p>text_</p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_italic_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
+
+    [
+      {md: '***text***', expected: '<p><i><em>text</em></i></p>'},
+      {md: '___text___', expected: '<p><i><em>text</em></i></p>'},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_emphasis_italic_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
@@ -203,7 +211,7 @@ module Compiler
     end
 
     def test_tokenize_paragraph
-      assert_equal [Lexer::Token.new(:text, {text: 'text'}), Lexer::Token.new(:newl)], tokenize('text')
+      assert_equal [Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}), Lexer::Token.new(:newl)], tokenize('text')
     end
 
     def test_tokenize_header
@@ -213,10 +221,10 @@ module Compiler
     def test_tokenize_list
       assert_equal [
         Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
-        Lexer::Token.new(:text, {text: '1'}),
+        Lexer::Token.new(:text, {text: '1', bold: false, italic: false}),
         Lexer::Token.new(:newl),
         Lexer::Token.new(:listi, {indent: 1, ordered: false}),
-        Lexer::Token.new(:text, {text: '1.1'}),
+        Lexer::Token.new(:text, {text: '1.1', bold: false, italic: false}),
         Lexer::Token.new(:newl),
       ], tokenize(<<~MD)
         1. 1
@@ -240,7 +248,7 @@ module Compiler
 
     def test_parse_paragraph
       assert_equal ast_root(Parser::NodePara.new(children: [Parser::NodeText.new(text: 'text')])),
-        parse([Lexer::Token.new(:text, {text: 'text'}), Lexer::Token.new(:newl)])
+        parse([Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}), Lexer::Token.new(:newl)])
     end
 
     def test_parse_header
@@ -260,10 +268,10 @@ module Compiler
       ])),
         parse([
           Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
-          Lexer::Token.new(:text, {text: '1'}),
+          Lexer::Token.new(:text, {text: '1', bold: false, italic: false}),
           Lexer::Token.new(:newl),
           Lexer::Token.new(:listi, {indent: 1, ordered: false}),
-          Lexer::Token.new(:text, {text: '1.1'}),
+          Lexer::Token.new(:text, {text: '1.1', bold: false, italic: false}),
           Lexer::Token.new(:newl),
         ])
     end
