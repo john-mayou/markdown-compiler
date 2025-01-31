@@ -8,7 +8,7 @@ module Compiler
       {md: 'text', expected: '<p>text</p>'},
       {md: 'text #', expected: '<p>text #</p>'},
     ].each do |tc, i|
-      define_method("test_compile_text_#{i}") do
+      define_method("test_compile_paragraph_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
