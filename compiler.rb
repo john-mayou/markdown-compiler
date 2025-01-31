@@ -31,6 +31,9 @@ module Compiler
           end
           tks.push Token.new(:header, {size:, text:})
           lslice($1.size)
+        elsif @md =~ /\A(\*\*.+?\*\*|__.+?__)/
+          tks.push Token.new(:bold, {text: (text = $1).gsub(/[\*_]/, '')})
+          lslice(text.size)
         elsif @md =~ /\A(=+|-+) *$/
           size = $1.include?('=') ? 1 : 2
           tks.push Token.new(:header_alt, {size:})
@@ -47,6 +50,10 @@ module Compiler
 
         @md.rstrip!
       end
+        
+      if tks.last && tks.last.type != :endl
+        tks.push Token.new(:endl)
+      end
 
       tks
     end
@@ -58,9 +65,10 @@ module Compiler
 
   class Parser
     
-    NodeRoot = Struct.new(:children)
+    NodeRoot   = Struct.new(:children)
     NodeHeader = Struct.new(:size, :text)
-    NodeText = Struct.new(:text)
+    NodePara   = Struct.new(:children)
+    NodeText   = Struct.new(:text, :bold)
 
     def initialize(tks)
       @tks = tks
@@ -75,10 +83,8 @@ module Compiler
             parse_header
           elsif peek(:text) && peek(:newl, 2) && peek(:header_alt, 3)
             parse_header_alt
-          elsif peek(:text)
-            parse_text
-          elsif peek(:newl)
-            parse_newl
+          elsif peek(:text) || peek(:bold)
+            parse_paragraph
           else
             raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
           end
@@ -92,7 +98,7 @@ module Compiler
 
     def parse_header
       token = consume(:header)
-      consume(:endl) if peek(:endl)
+      consume(:endl)
       NodeHeader.new(size: token.attrs[:size], text: token.attrs[:text])
     end
 
@@ -100,18 +106,25 @@ module Compiler
       text = consume(:text).attrs[:text]
       consume(:newl)
       size = consume(:header_alt).attrs[:size]
-      consume(:endl) if peek(:endl)
+      consume(:endl)
       NodeHeader.new(size:, text:)
     end
 
-    def parse_text
-      token = consume(:text)
-      consume(:endl) if peek(:endl)
-      NodeText.new(text: token.attrs[:text])
-    end
+    def parse_paragraph
+      para = NodePara.new(children: [])
 
-    def parse_newl
-      consume(:newl)
+      while peek(:text) || peek(:bold)
+        para.children << (
+          if peek(:text)
+            NodeText.new(text: consume(:text).attrs[:text])
+          elsif peek(:bold)
+            NodeText.new(text: consume(:bold).attrs[:text], bold: true)
+          end
+        )
+      end
+      consume(:endl)
+      
+      para
     end
 
     def peek(type, depth = 1)
@@ -142,8 +155,8 @@ module Compiler
           case node
           when Parser::NodeHeader
             gen_header(node)
-          when Parser::NodeText
-            gen_text(node)
+          when Parser::NodePara
+            gen_paragraph(node)
           else
             raise RuntimeError, "Invalid node: #{node}"
           end
@@ -159,8 +172,12 @@ module Compiler
       "<h#{node.size}>#{node.text}</h#{node.size}>"
     end
 
+    def gen_paragraph(node)
+      "<p>#{node.children.map { gen_text it }.join('')}</p>"
+    end
+
     def gen_text(node)
-      "<p>#{node.text}</p>"
+      node.bold ? "<em>#{node.text}</em>" : node.text
     end
   end
 end
