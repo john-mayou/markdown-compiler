@@ -18,7 +18,7 @@ module Compiler
     end
 
     def tokenize
-      tks = []
+      @tks = []
 
       @md.lstrip!
       while !@md.empty?
@@ -29,60 +29,85 @@ module Compiler
             size += 1
             text.slice!(0, text[1] == ' ' ? 2 : 1)
           end
-          tks.push Token.new(:header, {size:, text:})
+          @tks << Token.new(:header, {size:, text:})
           @md.slice!(0, $1.size)
         elsif @md =~ /\A(=+|-+) *$/
           size = $1.include?('=') ? 1 : 2
-          tks.push Token.new(:header_alt, {size:})
+          @tks << Token.new(:header_alt, {size:})
           @md.slice!(0, $1.size)
-        elsif @md =~ /\A\n/
-          tks.push Token.new(:newl)
-          @md.slice!(0, 1)
-        else
-          line = String.new
-          @md.each_char { it == "\n" ? break : line << it }
-          @md.slice!(0, line.size)
-
-          curr = String.new
-          curr_push = lambda { tks.push Token.new(:text, {text: curr}) }
-
-          while !line.empty?
-            if (line.start_with?('*') || line.start_with?('_')) && line =~ /\A(\*\*.+?\*\*|__.+?__)/ # bold
-              curr_push.call if !curr.empty?
-              bold = line.match(/\A(\*\*.+?\*\*|__.+?__)/).captures.first
-              tks.push Token.new(:bold, {text: bold.gsub(/[\*_]/, '')})
-              line.slice!(0, bold.size)
-            elsif line.start_with?('[') && line =~ /\A(?:\[(.+?)\]\((.*?)\))/ # link
-              curr_push.call if !curr.empty?
-              tks.push Token.new(:link, {text: $1, href: $2})
-              line.slice!(0, $1.size + $2.size + 4) # []() = 4
+        elsif @md =~ /\A *(([0-9]\.)|(\*|-)) / # only support one digit for now
+          i = 0
+          loop do
+            case @md[i]
+            when '*', '-'
+              @tks << Token.new(:listi, {indent: (i / 2).floor, ordered: false})
+              i += 1 # for ' '
+              break
+            when /(\d)/
+              @tks << Token.new(:listi, {indent: (i / 2).floor, ordered: true, digit: $1.to_i})
+              i += 2 # for '. '
+              break
+            when ' '
+              i += 1
             else
-              curr << line[0]
-              line.slice!(0, 1)
+              raise RuntimeError, "Invalid character found: '#{ch}'"
             end
           end
-
-          curr_push.call if !curr.empty?
+          @md.slice!(0, i + 1)
+          tokenize_remaining_line
+        elsif @md =~ /\A\n/
+          @tks << Token.new(:newl)
+          @md.slice!(0, 1)
+        else
+          tokenize_remaining_line
         end
 
         @md.rstrip!
       end
         
-      if tks.last && tks.last.type != :newl
-        tks.push Token.new(:newl)
+      if @tks.last && @tks.last.type != :newl
+        @tks << Token.new(:newl)
       end
 
-      tks
+      @tks
+    end
+
+    private
+
+    def tokenize_remaining_line
+      line = String.new
+      @md.each_char { it == "\n" ? break : line << it }
+      @md.slice!(0, line.size)
+      curr = String.new
+      curr_push = lambda { @tks << Token.new(:text, {text: curr}) }
+      while !line.empty?
+        if (line.start_with?('*') || line.start_with?('_')) && line =~ /\A(\*\*.+?\*\*|__.+?__)/ # bold
+          curr_push.call if !curr.empty?
+          bold = line.match(/\A(\*\*.+?\*\*|__.+?__)/).captures.first
+          @tks << Token.new(:bold, {text: bold.gsub(/[\*_]/, '')})
+          line.slice!(0, bold.size)
+        elsif line.start_with?('[') && line =~ /\A(?:\[(.+?)\]\((.*?)\))/ # link
+          curr_push.call if !curr.empty?
+          @tks << Token.new(:link, {text: $1, href: $2})
+          line.slice!(0, $1.size + $2.size + 4) # []() = 4
+        else
+          curr << line[0]
+          line.slice!(0, 1)
+        end
+      end
+      curr_push.call if !curr.empty?
     end
   end
 
   class Parser
     
-    NodeRoot   = Struct.new(:children)
-    NodeHeader = Struct.new(:size, :text)
-    NodePara   = Struct.new(:children)
-    NodeText   = Struct.new(:text, :bold)
-    NodeLink   = Struct.new(:text, :href)
+    NodeRoot     = Struct.new(:children)
+    NodeHeader   = Struct.new(:size, :text)
+    NodePara     = Struct.new(:children)
+    NodeText     = Struct.new(:text, :bold)
+    NodeLink     = Struct.new(:text, :href)
+    NodeList     = Struct.new(:ordered, :children)
+    NodeListItem = Struct.new(:para, :children)
 
     def initialize(tks)
       @tks = tks
@@ -97,6 +122,8 @@ module Compiler
             parse_header
           elsif peek(:text) && peek(:newl, 2) && peek(:header_alt, 3)
             parse_header_alt
+          elsif peek(:listi)
+            parse_list
           elsif peek(:link)
             parse_link
           elsif peek_any(:text, :bold)
@@ -125,6 +152,32 @@ module Compiler
       consume(:newl)
       NodeHeader.new(size:, text:)
     end
+    
+    def parse_list(list_indent_map = {}, last_indent = 0)
+      while peek(:listi)
+        list_token = consume(:listi)
+        list_indent = [last_indent + 1, list_token.attrs[:indent]].min # only allow 1 additional level at a time
+        list_node = list_indent_map[list_indent]
+        if !list_node
+          list_node = NodeList.new(ordered: list_token.attrs[:ordered], children: [])
+          list_indent_map[list_indent] = list_node
+          if list_indent != 0
+            list_indent_map[list_indent - 1].children.last.children ||= []
+            list_indent_map[list_indent - 1].children.last.children << list_node
+          end
+        end
+        list_node.children << NodeListItem.new(para: parse_paragraph)
+        parse_list(list_indent_map, list_indent)
+      end
+
+      list_indent_map[0]
+    end
+
+    def parse_link
+      link = consume(:link)
+      consume(:newl)
+      NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
+    end
 
     def parse_paragraph
       para = NodePara.new(children: [])
@@ -145,12 +198,6 @@ module Compiler
       consume(:newl)
       
       para
-    end
-
-    def parse_link
-      link = consume(:link)
-      consume(:newl)
-      NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
     end
 
     def peek_any(*types)
@@ -186,6 +233,8 @@ module Compiler
           case node
           when Parser::NodeHeader
             gen_header(node)
+          when Parser::NodeList
+            gen_list(node)
           when Parser::NodeLink
             gen_link(node)
           when Parser::NodePara
@@ -203,6 +252,18 @@ module Compiler
 
     def gen_header(node)
       "<h#{node.size}>#{node.text}</h#{node.size}>"
+    end
+
+    def gen_list(node)
+      html = String.new(node.ordered ? String.new('<ol>') : String.new('<ul>'))
+      node.children.each { html << gen_list_item(it) }
+      html << (node.ordered ? String.new('</ol>') : String.new('</ul>'))
+    end
+
+    def gen_list_item(node)
+      html = String.new('<li>') << gen_paragraph(node.para)
+      node.children&.each { html << gen_list(it) }
+      html << String.new('</li>')
     end
 
     def gen_paragraph(node)

@@ -1,6 +1,18 @@
 require 'minitest/autorun'
+require 'shellwords'
+require 'open3'
 
 require_relative 'compiler.rb'
+
+class Minitest::Test
+  make_my_diffs_pretty!
+end
+
+def unformat_html(html)
+  html.gsub!(/^\s+|\s+$/, '')
+  html.gsub!("\n", '')
+  html
+end
 
 module Compiler
   class TestCompile < Minitest::Test
@@ -65,6 +77,105 @@ module Compiler
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
+
+    [
+      {
+        md: <<~MD,
+          * 1
+          - 2
+          * 3
+        MD
+        expected: unformat_html(String.new(<<~HTML)),
+          <ul>
+            <li><p>1</p></li>
+            <li><p>2</p></li>
+            <li><p>3</p></li>
+          </ul>
+        HTML
+      },
+      {
+        md: <<~MD,
+          * 1
+          - 2
+            * 2.1
+              - 2.1.1
+            * 2.2
+          - 3
+        MD
+        expected: unformat_html(String.new(<<~HTML)),
+          <ul>
+            <li><p>1</p></li>
+            <li>
+              <p>2</p>
+              <ul>
+                <li>
+                  <p>2.1</p>
+                  <ul>
+                    <li><p>2.1.1</p></li>
+                  </ul>
+                </li>
+                <li><p>2.2</p></li>
+              </ul>
+            </li>
+            <li><p>3</p></li>
+          </ul>
+        HTML
+      }
+    ].each_with_index do |tc, i|
+      define_method("test_compile_unordered_list_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
+
+    [
+      {
+        md: <<~MD,
+          1. 1
+          2. 2
+          3. 3
+        MD
+        expected: unformat_html(String.new(<<~HTML)),
+          <ol>
+            <li><p>1</p></li>
+            <li><p>2</p></li>
+            <li><p>3</p></li>
+          </ol>
+        HTML
+      },
+      {
+        md: <<~MD,
+          1. 1
+          2. 2
+            1. 2.1
+              1. 2.1.1
+            2. 2.2
+          3. 3
+        MD
+        expected: unformat_html(String.new(<<~HTML)),
+          <ol>
+            <li><p>1</p></li>
+            <li>
+              <p>2</p>
+              <ol>
+                <li>
+                  <p>2.1</p>
+                  <ol>
+                    <li><p>2.1.1</p></li>
+                  </ol>
+                </li>
+                <li><p>2.2</p></li>
+              </ol>
+            </li>
+            <li><p>3</p></li>
+          </ol>
+        HTML
+      }
+    ].each_with_index do |tc, i|
+      define_method("test_compile_ordered_list_#{i}") do
+
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
   end
 
   class TestLexer < Minitest::Test
@@ -82,6 +193,20 @@ module Compiler
 
     def test_tokenize_header
       assert_equal [Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:newl)], tokenize('# text')
+    end
+
+    def test_tokenize_list
+      assert_equal [
+        Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
+        Lexer::Token.new(:text, {text: '1'}),
+        Lexer::Token.new(:newl),
+        Lexer::Token.new(:listi, {indent: 1, ordered: false}),
+        Lexer::Token.new(:text, {text: '1.1'}),
+        Lexer::Token.new(:newl),
+      ], tokenize(<<~MD)
+        1. 1
+          - 1.1
+      MD
     end
   end
 
@@ -107,6 +232,26 @@ module Compiler
       assert_equal ast_root(Parser::NodeHeader.new(size: 1, text: 'text')),
         parse([Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:newl)])
     end
+
+    def test_parse_list
+      assert_equal ast_root(Parser::NodeList.new(ordered: true, children: [
+        Parser::NodeListItem.new(
+          para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1')]),
+          children: [
+            Parser::NodeList.new(ordered: false, children: [
+              Parser::NodeListItem.new(para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1.1')]))
+            ])
+        ])
+      ])),
+        parse([
+          Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
+          Lexer::Token.new(:text, {text: '1'}),
+          Lexer::Token.new(:newl),
+          Lexer::Token.new(:listi, {indent: 1, ordered: false}),
+          Lexer::Token.new(:text, {text: '1.1'}),
+          Lexer::Token.new(:newl),
+        ])
+    end
   end
 
   class TestCodeGen < Minitest::Test
@@ -128,6 +273,28 @@ module Compiler
 
     def test_gen_header
       assert_equal '<h1>text</h1>', gen(ast_root(Parser::NodeHeader.new(size: 1, text: 'text')))
+    end
+
+    def test_gen_list
+      assert_equal unformat_html(String.new(<<~HTML)),
+          <ol>
+            <li>
+              <p>1</p>
+              <ul>
+                <li><p>1.1</p></li>
+              </ul>
+            </li>
+          </ol>
+        HTML
+        gen(ast_root(Parser::NodeList.new(ordered: true, children: [
+          Parser::NodeListItem.new(
+            para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1')]),
+            children: [
+              Parser::NodeList.new(ordered: false, children: [
+                Parser::NodeListItem.new(para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1.1')]))
+              ])
+          ])
+        ])))
     end
   end
 end
