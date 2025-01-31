@@ -111,13 +111,21 @@ module Compiler
 
   class Parser
     
-    # TODO: add default values where appropriate
-    
-    NodeRoot = Struct.new(:children)
+    NodeRoot = Struct.new(:children) do
+      def initialize(**kwargs)
+        super(**kwargs)
+        self.children ||= []
+      end
+    end
 
     NodeHeader = Struct.new(:size, :text)
 
-    NodePara = Struct.new(:children)
+    NodePara = Struct.new(:children) do
+      def initialize(**kwargs)
+        super(**kwargs)
+        self.children ||= []
+      end
+    end
 
     NodeText = Struct.new(:text, :bold, :italic) do
       def initialize(**kwargs)
@@ -129,16 +137,26 @@ module Compiler
 
     NodeLink = Struct.new(:text, :href)
 
-    NodeList = Struct.new(:ordered, :children)
+    NodeList = Struct.new(:ordered, :children) do
+      def initialize(**kwargs)
+        super(**kwargs)
+        self.children ||= []
+      end
+    end
 
-    NodeListItem = Struct.new(:para, :children)
+    NodeListItem = Struct.new(:para, :children) do
+      def initialize(**kwargs)
+        super(**kwargs)
+        self.children ||= []
+      end
+    end
 
     def initialize(tks)
       @tks = tks
     end
 
     def parse
-      ast = NodeRoot.new(children: [])
+      ast = NodeRoot.new
       
       while !@tks.empty?
         ast.children << (
@@ -183,10 +201,9 @@ module Compiler
         list_indent = [last_indent + 1, list_token.attrs[:indent]].min # only allow 1 additional level at a time
         list_node = list_indent_map[list_indent]
         if !list_node
-          list_node = NodeList.new(ordered: list_token.attrs[:ordered], children: [])
+          list_node = NodeList.new(ordered: list_token.attrs[:ordered])
           list_indent_map[list_indent] = list_node
           if list_indent != 0
-            list_indent_map[list_indent - 1].children.last.children ||= []
             list_indent_map[list_indent - 1].children.last.children << list_node
           end
         end
@@ -204,7 +221,7 @@ module Compiler
     end
 
     def parse_paragraph
-      para = NodePara.new(children: [])
+      para = NodePara.new
 
       while peek_any(:text, :link)
         para.children << (
@@ -285,7 +302,7 @@ module Compiler
 
     def gen_list_item(node)
       html = String.new('<li>') << gen_paragraph(node.para)
-      node.children&.each { html << gen_list(it) }
+      node.children.each { html << gen_list(it) }
       html << String.new('</li>')
     end
 
