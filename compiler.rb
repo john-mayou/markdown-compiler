@@ -30,6 +30,18 @@ module Compiler
           tokenize_remaining_line
           @tks << Token.new(:newl)
           @tks << Token.new(:hr)
+        elsif @md =~ /\A```(.*?) *$/ # code block
+          lang = $1 || ''
+          slice_current_line!
+          code = String.new
+          while ch = @md[0]
+            code << ch
+            @md.slice!(0, 1)
+            if @md =~ /\A``` *$/ # closing code block
+              break slice_current_line!
+            end
+          end
+          @tks << Token.new(:codeblock, {lang:, code:})
         elsif @md =~ /\A(\*{3,}[\* ]*|-{3,}[- ]*)$/ # hr
           @tks << Token.new(:hr)
           @md.slice!(0, $1.size)
@@ -129,6 +141,13 @@ module Compiler
       end
       curr_push.call if !curr.empty?
     end
+
+    def slice_current_line!
+      while ch = @md[0]
+        @md.slice!(0, 1)
+        break if ch == "\n"
+      end
+    end
   end
 
   class Parser
@@ -146,6 +165,8 @@ module Compiler
         self.children ||= []
       end
     end
+
+    NodeCodeBlock = Struct.new(:lang, :code)
 
     NodePara = Struct.new(:children) do
       def initialize(**kwargs)
@@ -190,6 +211,8 @@ module Compiler
       while !@tks.empty?
         if peek(:header)
           ast.children << parse_header
+        elsif peek(:codeblock)
+          ast.children << parse_code_block
         elsif peek(:hr)
           ast.children << parse_hr
         elsif peek(:listi)
@@ -211,6 +234,12 @@ module Compiler
     def parse_header
       token = consume(:header)
       NodeHeader.new(size: token.attrs[:size], children: parse_remaining_line)
+    end
+
+    def parse_code_block
+      token = consume(:codeblock)
+      consume(:newl)
+      NodeCodeBlock.new(lang: token.attrs[:lang], code: token.attrs[:code])
     end
     
     def parse_list(list_indent_map = {}, last_indent = 0)
@@ -301,6 +330,8 @@ module Compiler
           case node
           when Parser::NodeHeader
             gen_header(node)
+          when Parser::NodeCodeBlock
+            gen_code_block(node)
           when Parser::NodeList
             gen_list(node)
           when Parser::NodeHr
@@ -322,6 +353,10 @@ module Compiler
 
     def gen_header(node)
       "<h#{node.size}>#{gen_line(node.children)}</h#{node.size}>"
+    end
+
+    def gen_code_block(node)
+      "<pre><code class='#{node.lang}'>#{node.code}</code></pre>"
     end
 
     def gen_list(node)

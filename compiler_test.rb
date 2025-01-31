@@ -214,6 +214,30 @@ module Compiler
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
+
+    [
+      {
+        md: <<~MD,
+          ```
+          code line 1
+          code line 2
+          ```
+        MD
+        expected: String.new("<pre><code class=''>code line 1\ncode line 2\n</code></pre>")
+      },
+      {
+        md: <<~MD,
+          ```ruby
+          code with lang
+          ```
+        MD
+        expected: String.new("<pre><code class='ruby'>code with lang\n</code></pre>")
+      }
+    ].each_with_index do |tc, i|
+      define_method("test_compile_code_block_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
   end
 
   class TestLexer < Minitest::Test
@@ -250,6 +274,17 @@ module Compiler
       ], tokenize(<<~MD)
         1. 1
           - 1.1
+      MD
+    end
+
+    def test_tokenize_code_block
+      assert_equal [
+        Lexer::Token.new(:codeblock, {lang: 'ruby', code: "code\n"}),
+        Lexer::Token.new(:newl),
+      ], tokenize(<<~MD)
+        ```ruby
+        code
+        ```
       MD
     end
   end
