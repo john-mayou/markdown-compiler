@@ -1,6 +1,9 @@
 task :default => :test
 
 task :test do
-  Dir.glob('./*.rb').each { require it }
-  Dir.glob('./*_test.rb').each { require it }
+  if method = ENV['TEST']
+    Dir.glob('./*_test.rb').each { system("ruby #{it} --name #{method}") }
+  else
+    Dir.glob('./*_test.rb').each { require it }
+  end
 end
