@@ -95,7 +95,15 @@ module Compiler
     end
 
     [
-      {md: '[text](href)', expected: '<a href="href">text</a>'},
+      {md: '![alt](src)', expected: "<img alt='alt' src='src'/>"},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_image_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
+
+    [
+      {md: '[text](href)', expected: "<a href='href'>text</a>"},
     ].each_with_index do |tc, i|
       define_method("test_compile_link_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])

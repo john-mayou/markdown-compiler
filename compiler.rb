@@ -130,7 +130,11 @@ module Compiler
           curr_push.call if !curr.empty?
           @tks << Token.new(:text, {text: match.gsub(/[\*_]/, ''), bold: false, italic: true})
           line.slice!(0, match.size)
-        elsif line.start_with?('[') && line =~ /\A(?:\[(.+?)\]\((.*?)\))/ # link
+        elsif line.start_with?('![') && line =~ /\A!\[(.+)\]\((.*)\)/ # image
+          curr_push.call if !curr.empty?
+          @tks << Token.new(:image, {alt: $1, src: $2})
+          line.slice!(0, $1.size + $2.size + 5) # ![]() = 5
+        elsif line.start_with?('[') && line =~ /\A\[(.+)\]\((.*)\)/ # link
           curr_push.call if !curr.empty?
           @tks << Token.new(:link, {text: $1, href: $2})
           line.slice!(0, $1.size + $2.size + 4) # []() = 4
@@ -191,6 +195,8 @@ module Compiler
 
     NodeHr = Struct.new
 
+    NodeImage = Struct.new(:alt, :src)
+
     NodeLink = Struct.new(:text, :href)
 
     NodeList = Struct.new(:ordered, :children) do
@@ -223,6 +229,8 @@ module Compiler
           ast.children << parse_hr
         elsif peek(:listi)
           ast.children << parse_list
+        elsif peek(:image)
+          ast.children << parse_image
         elsif peek(:link)
           ast.children << parse_link
         elsif peek_any(:text, :code)
@@ -271,6 +279,12 @@ module Compiler
       consume(:hr)
       consume(:newl)
       NodeHr.new
+    end
+
+    def parse_image
+      image = consume(:image)
+      consume(:newl)
+      NodeImage.new(alt: image.attrs[:alt], src: image.attrs[:src])
     end
 
     def parse_link
@@ -345,6 +359,8 @@ module Compiler
             gen_list(node)
           when Parser::NodeHr
             gen_hr(node)
+          when Parser::NodeImage
+            gen_image(node)
           when Parser::NodeLink
             gen_link(node)
           when Parser::NodeCode
@@ -413,8 +429,12 @@ module Compiler
       '<hr>'
     end
 
+    def gen_image(node)
+      "<img alt='#{node.alt}' src='#{node.src}'/>"
+    end
+
     def gen_link(node)
-      "<a href=\"#{node.href}\">#{node.text}</a>"
+      "<a href='#{node.href}'>#{node.text}</a>"
     end
 
     def gen_code(node)
