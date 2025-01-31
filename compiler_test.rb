@@ -238,6 +238,19 @@ module Compiler
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
+
+    [
+      {md: '`syntax`', expected: "<p><code class=''>syntax</code></p>"},
+      {md: 'before`syntax`', expected: "<p>before<code class=''>syntax</code></p>"},
+      {md: 'beforebefore before`syntax`', expected: "<p>beforebefore before<code class=''>syntax</code></p>"},
+      {md: '`syntax`after', expected: "<p><code class='after'>syntax</code></p>"},
+      {md: '`syntax`after afterafter', expected: "<p><code class='after'>syntax</code> afterafter</p>"},
+      {md: '`syntax``syntax 2`', expected: "<p><code class=''>syntax``syntax 2</code></p>"},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_code_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
   end
 
   class TestLexer < Minitest::Test
@@ -286,6 +299,13 @@ module Compiler
         code
         ```
       MD
+    end
+
+    def test_tokenize_code
+      assert_equal [
+        Lexer::Token.new(:code, {lang: 'ruby', code: 'code'}),
+        Lexer::Token.new(:newl),
+      ], tokenize('`code`ruby')
     end
   end
 

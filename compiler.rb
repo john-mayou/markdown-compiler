@@ -82,7 +82,7 @@ module Compiler
 
           tokenize_remaining_line
 
-          # since we're already cut out next lines chars, we have to handle the hr and newls
+          # since we've already cut out next line's chars, we have to handle the hr and newls
           if header_line
             @tks << Token.new(:newl)
             @tks << Token.new(:hr)
@@ -134,6 +134,10 @@ module Compiler
           curr_push.call if !curr.empty?
           @tks << Token.new(:link, {text: $1, href: $2})
           line.slice!(0, $1.size + $2.size + 4) # []() = 4
+        elsif line.start_with?('`') && line =~ /\A`(.+)`([a-z]*)/ # code
+          curr_push.call if !curr.empty?
+          @tks << Token.new(:code, {lang: $2 || '', code: $1})
+          line.slice!(0, $1.size + $2.size + 2) # `` = 2
         else
           curr << line[0]
           line.slice!(0, 1)
@@ -165,6 +169,8 @@ module Compiler
         self.children ||= []
       end
     end
+
+    NodeCode = Struct.new(:lang, :code)
 
     NodeCodeBlock = Struct.new(:lang, :code)
 
@@ -219,7 +225,7 @@ module Compiler
           ast.children << parse_list
         elsif peek(:link)
           ast.children << parse_link
-        elsif peek(:text)
+        elsif peek_any(:text, :code)
           ast.children << parse_paragraph
         else
           raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
@@ -280,11 +286,14 @@ module Compiler
     def parse_remaining_line
       nodes = []
 
-      while peek_any(:text, :link)
+      while peek_any(:text, :code, :link)
         nodes << (
           if peek(:text)
             consume(:text).attrs => {text:, bold:, italic:}
             NodeText.new(text:, bold:, italic:)
+          elsif peek(:code)
+            consume(:code).attrs => {lang:, code:}
+            NodeCode.new(lang:, code:)
           elsif peek(:link)
             parse_link
           else
@@ -338,6 +347,8 @@ module Compiler
             gen_hr(node)
           when Parser::NodeLink
             gen_link(node)
+          when Parser::NodeCode
+            gen_code(node)
           when Parser::NodePara
             gen_paragraph(node)
           else
@@ -383,10 +394,12 @@ module Compiler
       nodes.each do |child|
         html << (
           case child
-          when Parser::NodeText
-            gen_text(child)
           when Parser::NodeLink
             gen_link(child)
+          when Parser::NodeCode
+            gen_code(child)
+          when Parser::NodeText
+            gen_text(child)
           else
             raise "Invalid node: #{child}"
           end
@@ -402,6 +415,10 @@ module Compiler
 
     def gen_link(node)
       "<a href=\"#{node.href}\">#{node.text}</a>"
+    end
+
+    def gen_code(node)
+      "<code class='#{node.lang}'>#{node.code}</code>"
     end
 
     def gen_text(node)
