@@ -312,10 +312,9 @@ module Compiler
       "<a href=\"#{node.href}\">#{node.text}</a>"
     end
 
-    # TODO: bold tag should be <b> not <em>
     def gen_text(node)
       html = node.text
-      node.bold && html.insert(0, '<em>') && html.insert(html.size, '</em>')
+      node.bold && html.insert(0, '<b>') && html.insert(html.size, '</b>')
       node.italic && html.insert(0, '<i>') && html.insert(html.size, '</i>')
       html
     end

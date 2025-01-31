@@ -56,10 +56,10 @@ module Compiler
     end
 
     [
-      {md: '**text**', expected: '<p><em>text</em></p>'},
-      {md: '__text__', expected: '<p><em>text</em></p>'},
-      {md: '**text****text**', expected: '<p><em>text</em><em>text</em></p>'},
-      {md: '__text____text__', expected: '<p><em>text</em><em>text</em></p>'},
+      {md: '**text**', expected: '<p><b>text</b></p>'},
+      {md: '__text__', expected: '<p><b>text</b></p>'},
+      {md: '**text****text**', expected: '<p><b>text</b><b>text</b></p>'},
+      {md: '__text____text__', expected: '<p><b>text</b><b>text</b></p>'},
       {md: '**text*', expected: '<p>*<i>text</i></p>'},
       {md: '__text_', expected: '<p>_<i>text</i></p>'},
       {md: '*text**', expected: '<p><i>text</i>*</p>'},
@@ -86,8 +86,8 @@ module Compiler
     end
 
     [
-      {md: '***text***', expected: '<p><i><em>text</em></i></p>'},
-      {md: '___text___', expected: '<p><i><em>text</em></i></p>'},
+      {md: '***text***', expected: '<p><i><b>text</b></i></p>'},
+      {md: '___text___', expected: '<p><i><b>text</b></i></p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_emphasis_italic_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
