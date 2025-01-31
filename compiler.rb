@@ -31,7 +31,11 @@ module Compiler
           end
           tks.push Token.new(:header, {size:, text:})
           lslice($1.size)
-        elsif @md =~ /\A(\n)/
+        elsif @md =~ /\A(=+|-+) *$/
+          size = $1.include?('=') ? 1 : 2
+          tks.push Token.new(:header_alt, {size:})
+          lslice($1.size)
+        elsif @md =~ /\A\n/
           tks.push Token.new(:newl)
           lslice(1)
         elsif @md =~ /\A(.+)/
@@ -69,8 +73,12 @@ module Compiler
         ast.children << (
           if peek(:header)
             parse_header
+          elsif peek(:text) && peek(:newl, 2) && peek(:header_alt, 3)
+            parse_header_alt
           elsif peek(:text)
             parse_text
+          elsif peek(:newl)
+            parse_newl
           else
             raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
           end
@@ -88,14 +96,26 @@ module Compiler
       NodeHeader.new(size: token.attrs[:size], text: token.attrs[:text])
     end
 
+    def parse_header_alt
+      text = consume(:text).attrs[:text]
+      consume(:newl)
+      size = consume(:header_alt).attrs[:size]
+      consume(:endl) if peek(:endl)
+      NodeHeader.new(size:, text:)
+    end
+
     def parse_text
       token = consume(:text)
       consume(:endl) if peek(:endl)
       NodeText.new(text: token.attrs[:text])
     end
 
-    def peek(type)
-      (token = @tks[0]) && token.type == type
+    def parse_newl
+      consume(:newl)
+    end
+
+    def peek(type, depth = 1)
+      (token = @tks[depth - 1]) && token.type == type
     end
 
     def consume(type)

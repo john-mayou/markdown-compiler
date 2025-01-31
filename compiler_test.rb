@@ -25,6 +25,15 @@ module Compiler
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
+
+    [
+      {md: "text\n====", expected: '<h1>text</h1>'},
+      {md: "text\n----", expected: '<h2>text</h2>'},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_header_alt_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
   end
 
   class TestLexer < Minitest::Test
@@ -42,6 +51,14 @@ module Compiler
 
     def test_tokenize_header
       assert_equal [Lexer::Token.new(:header, {size: 1, text: 'text'})], tokenize('# text')
+    end
+
+    def test_tokenize_header_alt
+      assert_equal [
+        Lexer::Token.new(:text, {text: 'text'}),
+        Lexer::Token.new(:newl),
+        Lexer::Token.new(:header_alt, {size: 1}),
+      ], tokenize("text\n====")
     end
   end
 
@@ -66,6 +83,15 @@ module Compiler
     def test_parse_header
       assert_equal ast_root(Parser::NodeHeader.new(size: 1, text: 'text')),
         parse([Lexer::Token.new(:header, {size: 1, text: 'text'})])
+    end
+
+    def test_parse_header_alt
+      assert_equal ast_root(Parser::NodeHeader.new(size: 1, text: 'text')),
+        parse([
+          Lexer::Token.new(:text, {text: 'text'}),
+          Lexer::Token.new(:newl),
+          Lexer::Token.new(:header_alt, {size: 1}),
+        ])
     end
   end
 
