@@ -34,12 +34,12 @@ module Compiler
     end
 
     [
-      {md: '# text', expected: '<h1>text</h1>'},
-      {md: '## text', expected: '<h2>text</h2>'},
-      {md: '### text', expected: '<h3>text</h3>'},
-      {md: '#### text', expected: '<h4>text</h4>'},
-      {md: '##### text', expected: '<h5>text</h5>'},
-      {md: '###### text', expected: '<h6>text</h6>'},
+      {md: '# text', expected: '<h1>text</h1><hr>'},
+      {md: '## text', expected: '<h2>text</h2><hr>'},
+      {md: '### text', expected: '<h3>text</h3><hr>'},
+      {md: '#### text', expected: '<h4>text</h4><hr>'},
+      {md: '##### text', expected: '<h5>text</h5><hr>'},
+      {md: '###### text', expected: '<h6>text</h6><hr>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_header_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -47,8 +47,8 @@ module Compiler
     end
 
     [
-      {md: "text\n====", expected: '<h1>text</h1>'},
-      {md: "text\n----", expected: '<h2>text</h2>'},
+      {md: "text\n====", expected: '<h1>text</h1><hr>'},
+      {md: "text\n----", expected: '<h2>text</h2><hr>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_header_alt_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -103,6 +103,21 @@ module Compiler
     end
 
     [
+      {md: '**', expected: '<p>**</p>'},
+      {md: '--', expected: '<p>--</p>'},
+      {md: '***', expected: '<hr>'},
+      {md: '---', expected: '<hr>'},
+      {md: '***   ', expected: '<hr>'},
+      {md: '---   ', expected: '<hr>'},
+      {md: '*******', expected: '<hr>'},
+      {md: '-------', expected: '<hr>'},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_horizontal_rule_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
+
+    [
       {
         md: <<~MD,
           * 1
@@ -111,9 +126,9 @@ module Compiler
         MD
         expected: unformat_html(String.new(<<~HTML)),
           <ul>
-            <li><p>1</p></li>
-            <li><p>2</p></li>
-            <li><p>3</p></li>
+            <li>1</li>
+            <li>2</li>
+            <li>3</li>
           </ul>
         HTML
       },
@@ -128,20 +143,20 @@ module Compiler
         MD
         expected: unformat_html(String.new(<<~HTML)),
           <ul>
-            <li><p>1</p></li>
+            <li>1</li>
             <li>
-              <p>2</p>
+              2
               <ul>
                 <li>
-                  <p>2.1</p>
+                  2.1
                   <ul>
-                    <li><p>2.1.1</p></li>
+                    <li>2.1.1</li>
                   </ul>
                 </li>
-                <li><p>2.2</p></li>
+                <li>2.2</li>
               </ul>
             </li>
-            <li><p>3</p></li>
+            <li>3</li>
           </ul>
         HTML
       }
@@ -160,9 +175,9 @@ module Compiler
         MD
         expected: unformat_html(String.new(<<~HTML)),
           <ol>
-            <li><p>1</p></li>
-            <li><p>2</p></li>
-            <li><p>3</p></li>
+            <li>1</li>
+            <li>2</li>
+            <li>3</li>
           </ol>
         HTML
       },
@@ -177,20 +192,20 @@ module Compiler
         MD
         expected: unformat_html(String.new(<<~HTML)),
           <ol>
-            <li><p>1</p></li>
+            <li>1</li>
             <li>
-              <p>2</p>
+              2
               <ol>
                 <li>
-                  <p>2.1</p>
+                  2.1
                   <ol>
-                    <li><p>2.1.1</p></li>
+                    <li>2.1.1</li>
                   </ol>
                 </li>
-                <li><p>2.2</p></li>
+                <li>2.2</li>
               </ol>
             </li>
-            <li><p>3</p></li>
+            <li>3</li>
           </ol>
         HTML
       }
@@ -215,7 +230,13 @@ module Compiler
     end
 
     def test_tokenize_header
-      assert_equal [Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:newl)], tokenize('# text')
+      assert_equal [
+        Lexer::Token.new(:header, {size: 1}),
+        Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}),
+        Lexer::Token.new(:newl),
+        Lexer::Token.new(:hr),
+        Lexer::Token.new(:newl),
+      ], tokenize('# text')
     end
 
     def test_tokenize_list
@@ -252,18 +273,23 @@ module Compiler
     end
 
     def test_parse_header
-      assert_equal ast_root(Parser::NodeHeader.new(size: 1, text: 'text')),
-        parse([Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:newl)])
+      assert_equal ast_root(Parser::NodeHeader.new(size: 1, children: [Parser::NodeText.new(text: 'text')]), Parser::NodeHr.new),
+        parse([
+          Lexer::Token.new(:header, {size: 1}),
+          Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
+          Lexer::Token.new(:hr),
+          Lexer::Token.new(:newl)
+        ])
     end
 
     def test_parse_list
       assert_equal ast_root(Parser::NodeList.new(ordered: true, children: [
-        Parser::NodeListItem.new(
-          para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1')]),
-          children: [
-            Parser::NodeList.new(ordered: false, children: [
-              Parser::NodeListItem.new(para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1.1')]))
-            ])
+        Parser::NodeListItem.new(children: [
+          Parser::NodeText.new(text: '1'),
+          Parser::NodeList.new(ordered: false, children: [
+            Parser::NodeListItem.new(children: [Parser::NodeText.new(text: '1.1')])
+          ])
         ])
       ])),
         parse([
@@ -295,27 +321,26 @@ module Compiler
     end
 
     def test_gen_header
-      assert_equal '<h1>text</h1>', gen(ast_root(Parser::NodeHeader.new(size: 1, text: 'text')))
+      assert_equal '<h1>text</h1><hr>', gen(ast_root(Parser::NodeHeader.new(size: 1, children: [Parser::NodeText.new(text: 'text')]), Parser::NodeHr.new))
     end
 
     def test_gen_list
       assert_equal unformat_html(String.new(<<~HTML)),
           <ol>
             <li>
-              <p>1</p>
+              1
               <ul>
-                <li><p>1.1</p></li>
+                <li>1.1</li>
               </ul>
             </li>
           </ol>
         HTML
         gen(ast_root(Parser::NodeList.new(ordered: true, children: [
-          Parser::NodeListItem.new(
-            para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1')]),
-            children: [
-              Parser::NodeList.new(ordered: false, children: [
-                Parser::NodeListItem.new(para: Parser::NodePara.new(children: [Parser::NodeText.new(text: '1.1')]))
-              ])
+          Parser::NodeListItem.new(children: [
+            Parser::NodeText.new(text: '1'),
+            Parser::NodeList.new(ordered: false, children: [
+              Parser::NodeListItem.new(children: [Parser::NodeText.new(text: '1.1')])
+            ])
           ])
         ])))
     end

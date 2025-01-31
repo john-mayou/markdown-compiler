@@ -22,20 +22,18 @@ module Compiler
 
       @md.lstrip!
       while !@md.empty?
-        if @md =~ /\A((?:######|#####|####|###|##|#) .+)/
-          text = $1
+        if @md =~ /\A((?:######|#####|####|###|##|#) .+)/ # header
           size = 0
-          while text[0] == '#'
-            size += 1
-            text.slice!(0, text[1] == ' ' ? 2 : 1)
-          end
-          @tks << Token.new(:header, {size:, text:})
+          size += 1 while $1[size] == '#'
+          @tks << Token.new(:header, {size:})
+          @md.slice!(0, size + 1)
+          tokenize_remaining_line
+          @tks << Token.new(:newl)
+          @tks << Token.new(:hr)
+        elsif @md =~ /\A(\*{3,}[\* ]*|-{3,}[- ]*)$/ # hr
+          @tks << Token.new(:hr)
           @md.slice!(0, $1.size)
-        elsif @md =~ /\A(=+|-+) *$/
-          size = $1.include?('=') ? 1 : 2
-          @tks << Token.new(:header_alt, {size:})
-          @md.slice!(0, $1.size)
-        elsif @md =~ /\A *(([0-9]\.)|(\*|-)) / # only support one digit for now
+        elsif @md =~ /\A *(([0-9]\.)|(\*|-)) / # list
           i = 0
           loop do
             case @md[i]
@@ -43,7 +41,7 @@ module Compiler
               @tks << Token.new(:listi, {indent: (i / 2).floor, ordered: false})
               i += 1 # for ' '
               break
-            when /(\d)/
+            when /(\d)/ # only support one digit for now
               @tks << Token.new(:listi, {indent: (i / 2).floor, ordered: true, digit: $1.to_i})
               i += 2 # for '. '
               break
@@ -59,7 +57,31 @@ module Compiler
           @tks << Token.new(:newl)
           @md.slice!(0, 1)
         else
+          # if there is ---+ or ===+ on the next line, this whole line is a header
+          header_line = false
+          header_size = nil
+          curr_line, next_line = @md.match(/\A(.+)\n((?:=+|-+) *)/)&.captures
+          if curr_line && next_line
+            header_line = true
+            header_size = next_line.include?('=') ? 1 : 2
+            @tks << Token.new(:header, {size: header_size})
+            @md.slice!(curr_line.size + 1, next_line.size)
+          end
+
           tokenize_remaining_line
+
+          # since we're already cut out next lines chars, we have to handle the hr and newls
+          if header_line
+            @tks << Token.new(:newl)
+            @tks << Token.new(:hr)
+            while ch = @md[0]
+              @md.slice!(0, 1)
+              if ch == "\n"
+                @tks << Token.new(:newl)
+                break
+              end
+            end
+          end
         end
 
         @md.rstrip!
@@ -118,7 +140,12 @@ module Compiler
       end
     end
 
-    NodeHeader = Struct.new(:size, :text)
+    NodeHeader = Struct.new(:size, :children) do
+      def initialize(**kwargs)
+        super(**kwargs)
+        self.children ||= []
+      end
+    end
 
     NodePara = Struct.new(:children) do
       def initialize(**kwargs)
@@ -135,6 +162,8 @@ module Compiler
       end
     end
 
+    NodeHr = Struct.new
+
     NodeLink = Struct.new(:text, :href)
 
     NodeList = Struct.new(:ordered, :children) do
@@ -144,7 +173,7 @@ module Compiler
       end
     end
 
-    NodeListItem = Struct.new(:para, :children) do
+    NodeListItem = Struct.new(:children) do
       def initialize(**kwargs)
         super(**kwargs)
         self.children ||= []
@@ -159,21 +188,19 @@ module Compiler
       ast = NodeRoot.new
       
       while !@tks.empty?
-        ast.children << (
-          if peek(:header)
-            parse_header
-          elsif peek(:text) && peek(:newl, 2) && peek(:header_alt, 3)
-            parse_header_alt
-          elsif peek(:listi)
-            parse_list
-          elsif peek(:link)
-            parse_link
-          elsif peek(:text)
-            parse_paragraph
-          else
-            raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
-          end
-        )
+        if peek(:header)
+          ast.children << parse_header
+        elsif peek(:hr)
+          ast.children << parse_hr
+        elsif peek(:listi)
+          ast.children << parse_list
+        elsif peek(:link)
+          ast.children << parse_link
+        elsif peek(:text)
+          ast.children << parse_paragraph
+        else
+          raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
+        end
       end
 
       ast
@@ -183,16 +210,7 @@ module Compiler
 
     def parse_header
       token = consume(:header)
-      consume(:newl)
-      NodeHeader.new(size: token.attrs[:size], text: token.attrs[:text])
-    end
-
-    def parse_header_alt
-      text = consume(:text).attrs[:text]
-      consume(:newl)
-      size = consume(:header_alt).attrs[:size]
-      consume(:newl)
-      NodeHeader.new(size:, text:)
+      NodeHeader.new(size: token.attrs[:size], children: parse_remaining_line)
     end
     
     def parse_list(list_indent_map = {}, last_indent = 0)
@@ -207,11 +225,17 @@ module Compiler
             list_indent_map[list_indent - 1].children.last.children << list_node
           end
         end
-        list_node.children << NodeListItem.new(para: parse_paragraph)
+        list_node.children << NodeListItem.new(children: parse_remaining_line)
         parse_list(list_indent_map, list_indent)
       end
 
       list_indent_map[0]
+    end
+
+    def parse_hr
+      consume(:hr)
+      consume(:newl)
+      NodeHr.new
     end
 
     def parse_link
@@ -221,10 +245,14 @@ module Compiler
     end
 
     def parse_paragraph
-      para = NodePara.new
+      NodePara.new(children: parse_remaining_line)
+    end
+
+    def parse_remaining_line
+      nodes = []
 
       while peek_any(:text, :link)
-        para.children << (
+        nodes << (
           if peek(:text)
             consume(:text).attrs => {text:, bold:, italic:}
             NodeText.new(text:, bold:, italic:)
@@ -236,8 +264,8 @@ module Compiler
         )
       end
       consume(:newl)
-      
-      para
+
+      nodes
     end
 
     def peek_any(*types)
@@ -275,6 +303,8 @@ module Compiler
             gen_header(node)
           when Parser::NodeList
             gen_list(node)
+          when Parser::NodeHr
+            gen_hr(node)
           when Parser::NodeLink
             gen_link(node)
           when Parser::NodePara
@@ -291,7 +321,7 @@ module Compiler
     private
 
     def gen_header(node)
-      "<h#{node.size}>#{node.text}</h#{node.size}>"
+      "<h#{node.size}>#{gen_line(node.children)}</h#{node.size}>"
     end
 
     def gen_list(node)
@@ -301,15 +331,21 @@ module Compiler
     end
 
     def gen_list_item(node)
-      html = String.new('<li>') << gen_paragraph(node.para)
-      node.children.each { html << gen_list(it) }
+      html = String.new('<li>')
+      node.children.each do |child|
+        html << (child.is_a?(Parser::NodeList) ? gen_list(child) : gen_line([child]))
+      end
       html << String.new('</li>')
     end
 
     def gen_paragraph(node)
-      html = String.new('<p>')
+      "<p>#{gen_line(node.children)}</p>"
+    end
 
-      node.children.each do |child|
+    def gen_line(nodes)
+      html = String.new
+
+      nodes.each do |child|
         html << (
           case child
           when Parser::NodeText
@@ -322,7 +358,11 @@ module Compiler
         )
       end
 
-      html << '</p>'
+      html
+    end
+
+    def gen_hr(node)
+      '<hr>'
     end
 
     def gen_link(node)
