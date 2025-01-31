@@ -79,13 +79,20 @@ module Compiler
       @md.each_char { it == "\n" ? break : line << it }
       @md.slice!(0, line.size)
       curr = String.new
-      curr_push = lambda { @tks << Token.new(:text, {text: curr}) }
+      curr_push = lambda {
+        @tks << Token.new(:text, {text: curr})
+        curr = String.new
+      }
       while !line.empty?
         if (line.start_with?('*') || line.start_with?('_')) && line =~ /\A(\*\*.+?\*\*|__.+?__)/ # bold
           curr_push.call if !curr.empty?
-          bold = line.match(/\A(\*\*.+?\*\*|__.+?__)/).captures.first
+          bold = line.match(/\A(\*\*.+?\*\*|__.+?__)/).captures.first # TODO: change to match = line[re, 1] syntax so we can remove this
           @tks << Token.new(:bold, {text: bold.gsub(/[\*_]/, '')})
           line.slice!(0, bold.size)
+        elsif (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*[^\*]+?\*|_[^_]+?_)/, 1] # italic
+          curr_push.call if !curr.empty?
+          @tks << Token.new(:italic, {text: match.gsub(/[\*_]/, '')})
+          line.slice!(0, match.size)
         elsif line.start_with?('[') && line =~ /\A(?:\[(.+?)\]\((.*?)\))/ # link
           curr_push.call if !curr.empty?
           @tks << Token.new(:link, {text: $1, href: $2})
@@ -104,7 +111,7 @@ module Compiler
     NodeRoot     = Struct.new(:children)
     NodeHeader   = Struct.new(:size, :text)
     NodePara     = Struct.new(:children)
-    NodeText     = Struct.new(:text, :bold)
+    NodeText     = Struct.new(:text, :bold, :italic)
     NodeLink     = Struct.new(:text, :href)
     NodeList     = Struct.new(:ordered, :children)
     NodeListItem = Struct.new(:para, :children)
@@ -126,7 +133,7 @@ module Compiler
             parse_list
           elsif peek(:link)
             parse_link
-          elsif peek_any(:text, :bold)
+          elsif peek_any(:text, :bold, :italic)
             parse_paragraph
           else
             raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
@@ -182,12 +189,14 @@ module Compiler
     def parse_paragraph
       para = NodePara.new(children: [])
 
-      while peek_any(:text, :bold, :link)
+      while peek_any(:text, :bold, :italic, :link)
         para.children << (
           if peek(:text)
             NodeText.new(text: consume(:text).attrs[:text])
           elsif peek(:bold)
             NodeText.new(text: consume(:bold).attrs[:text], bold: true)
+          elsif peek(:italic)
+            NodeText.new(text: consume(:italic).attrs[:text], italic: true)
           elsif peek(:link)
             parse_link
           else
@@ -289,8 +298,12 @@ module Compiler
       "<a href=\"#{node.href}\">#{node.text}</a>"
     end
 
+    # TODO: bold tag should be <b> not <em>
     def gen_text(node)
-      node.bold ? "<em>#{node.text}</em>" : node.text
+      html = node.text
+      node.bold && html.insert(0, '<em>') && html.insert(html.size, '</em>')
+      node.italic && html.insert(0, '<i>') && html.insert(html.size, '</i>')
+      html
     end
   end
 end

@@ -60,12 +60,28 @@ module Compiler
       {md: '__text__', expected: '<p><em>text</em></p>'},
       {md: '**text****text**', expected: '<p><em>text</em><em>text</em></p>'},
       {md: '__text____text__', expected: '<p><em>text</em><em>text</em></p>'},
-      {md: '**text*', expected: '<p>**text*</p>'},
-      {md: '__text_', expected: '<p>__text_</p>'},
-      {md: '*text**', expected: '<p>*text**</p>'},
-      {md: '_text__', expected: '<p>_text__</p>'},
+      {md: '**text*', expected: '<p>*<i>text</i></p>'},
+      {md: '__text_', expected: '<p>_<i>text</i></p>'},
+      {md: '*text**', expected: '<p><i>text</i>*</p>'},
+      {md: '_text__', expected: '<p><i>text</i>_</p>'},
+      # TODO: add test cases for ***text***, ___text___
     ].each_with_index do |tc, i|
       define_method("test_compile_emphasis_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
+
+    [
+      {md: '*text*', expected: '<p><i>text</i></p>'},
+      {md: '_text_', expected: '<p><i>text</i></p>'},
+      {md: '*text**text*', expected: '<p><i>text</i><i>text</i></p>'},
+      {md: '_text__text_', expected: '<p><i>text</i><i>text</i></p>'},
+      {md: '*text', expected: '<p>*text</p>'},
+      {md: '_text', expected: '<p>_text</p>'},
+      {md: 'text*', expected: '<p>text*</p>'},
+      {md: 'text_', expected: '<p>text_</p>'},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_italic_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
@@ -172,7 +188,6 @@ module Compiler
       }
     ].each_with_index do |tc, i|
       define_method("test_compile_ordered_list_#{i}") do
-
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
