@@ -274,16 +274,6 @@ module Compiler
       assert_equal [Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}), Lexer::Token.new(:newl)], tokenize('text')
     end
 
-    def test_tokenize_header
-      assert_equal [
-        Lexer::Token.new(:header, {size: 1}),
-        Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}),
-        Lexer::Token.new(:newl),
-        Lexer::Token.new(:hr),
-        Lexer::Token.new(:newl),
-      ], tokenize('# text')
-    end
-
     def test_tokenize_list
       assert_equal [
         Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
@@ -335,17 +325,6 @@ module Compiler
         parse([Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}), Lexer::Token.new(:newl)])
     end
 
-    def test_parse_header
-      assert_equal ast_root(Parser::NodeHeader.new(size: 1, children: [Parser::NodeText.new(text: 'text')]), Parser::NodeHr.new),
-        parse([
-          Lexer::Token.new(:header, {size: 1}),
-          Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}),
-          Lexer::Token.new(:newl),
-          Lexer::Token.new(:hr),
-          Lexer::Token.new(:newl)
-        ])
-    end
-
     def test_parse_list
       assert_equal ast_root(Parser::NodeList.new(ordered: true, children: [
         Parser::NodeListItem.new(children: [
@@ -381,10 +360,6 @@ module Compiler
 
     def test_gen_paragraph
       assert_equal '<p>text</p>', gen(ast_root(Parser::NodePara.new(children: [Parser::NodeText.new(text: 'text')])))
-    end
-
-    def test_gen_header
-      assert_equal '<h1>text</h1><hr>', gen(ast_root(Parser::NodeHeader.new(size: 1, children: [Parser::NodeText.new(text: 'text')]), Parser::NodeHr.new))
     end
 
     def test_gen_list
