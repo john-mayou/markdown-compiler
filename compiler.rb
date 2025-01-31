@@ -84,11 +84,10 @@ module Compiler
         curr = String.new
       }
       while !line.empty?
-        if (line.start_with?('*') || line.start_with?('_')) && line =~ /\A(\*\*.+?\*\*|__.+?__)/ # bold
+        if (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*\*.+?\*\*|__.+?__)/, 1] # bold
           curr_push.call if !curr.empty?
-          bold = line.match(/\A(\*\*.+?\*\*|__.+?__)/).captures.first # TODO: change to match = line[re, 1] syntax so we can remove this
-          @tks << Token.new(:bold, {text: bold.gsub(/[\*_]/, '')})
-          line.slice!(0, bold.size)
+          @tks << Token.new(:bold, {text: match.gsub(/[\*_]/, '')})
+          line.slice!(0, match.size)
         elsif (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*[^\*]+?\*|_[^_]+?_)/, 1] # italic
           curr_push.call if !curr.empty?
           @tks << Token.new(:italic, {text: match.gsub(/[\*_]/, '')})
