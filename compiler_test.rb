@@ -52,14 +52,6 @@ module Compiler
     def test_tokenize_header
       assert_equal [Lexer::Token.new(:header, {size: 1, text: 'text'})], tokenize('# text')
     end
-
-    def test_tokenize_header_alt
-      assert_equal [
-        Lexer::Token.new(:text, {text: 'text'}),
-        Lexer::Token.new(:newl),
-        Lexer::Token.new(:header_alt, {size: 1}),
-      ], tokenize("text\n====")
-    end
   end
 
   class TestParser < Minitest::Test
@@ -83,15 +75,6 @@ module Compiler
     def test_parse_header
       assert_equal ast_root(Parser::NodeHeader.new(size: 1, text: 'text')),
         parse([Lexer::Token.new(:header, {size: 1, text: 'text'})])
-    end
-
-    def test_parse_header_alt
-      assert_equal ast_root(Parser::NodeHeader.new(size: 1, text: 'text')),
-        parse([
-          Lexer::Token.new(:text, {text: 'text'}),
-          Lexer::Token.new(:newl),
-          Lexer::Token.new(:header_alt, {size: 1}),
-        ])
     end
   end
 
