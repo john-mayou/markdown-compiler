@@ -30,36 +30,49 @@ module Compiler
             text.slice!(0, text[1] == ' ' ? 2 : 1)
           end
           tks.push Token.new(:header, {size:, text:})
-          lslice($1.size)
-        elsif @md =~ /\A(\*\*.+?\*\*|__.+?__)/
-          tks.push Token.new(:bold, {text: (text = $1).gsub(/[\*_]/, '')})
-          lslice(text.size)
+          @md.slice!(0, $1.size)
         elsif @md =~ /\A(=+|-+) *$/
           size = $1.include?('=') ? 1 : 2
           tks.push Token.new(:header_alt, {size:})
-          lslice($1.size)
+          @md.slice!(0, $1.size)
         elsif @md =~ /\A\n/
           tks.push Token.new(:newl)
-          lslice(1)
-        elsif @md =~ /\A(.+)/
-          tks.push Token.new(:text, {text: $1})
-          lslice($1.size)
+          @md.slice!(0, 1)
         else
-          raise RuntimeError, "Couldn't match token on '#{@md}'"
+          line = String.new
+          @md.each_char { it == "\n" ? break : line << it }
+          @md.slice!(0, line.size)
+
+          curr = String.new
+          curr_push = lambda { tks.push Token.new(:text, {text: curr}) }
+
+          while !line.empty?
+            if (line.start_with?('*') || line.start_with?('_')) && line =~ /\A(\*\*.+?\*\*|__.+?__)/ # bold
+              curr_push.call if !curr.empty?
+              bold = line.match(/\A(\*\*.+?\*\*|__.+?__)/).captures.first
+              tks.push Token.new(:bold, {text: bold.gsub(/[\*_]/, '')})
+              line.slice!(0, bold.size)
+            elsif line.start_with?('[') && line =~ /\A(?:\[(.+?)\]\((.*?)\))/ # link
+              curr_push.call if !curr.empty?
+              tks.push Token.new(:link, {text: $1, href: $2})
+              line.slice!(0, $1.size + $2.size + 4) # []() = 4
+            else
+              curr << line[0]
+              line.slice!(0, 1)
+            end
+          end
+
+          curr_push.call if !curr.empty?
         end
 
         @md.rstrip!
       end
         
-      if tks.last && tks.last.type != :endl
-        tks.push Token.new(:endl)
+      if tks.last && tks.last.type != :newl
+        tks.push Token.new(:newl)
       end
 
       tks
-    end
-
-    def lslice(count)
-      @md.slice!(0, count)
     end
   end
 
@@ -69,6 +82,7 @@ module Compiler
     NodeHeader = Struct.new(:size, :text)
     NodePara   = Struct.new(:children)
     NodeText   = Struct.new(:text, :bold)
+    NodeLink   = Struct.new(:text, :href)
 
     def initialize(tks)
       @tks = tks
@@ -83,7 +97,9 @@ module Compiler
             parse_header
           elsif peek(:text) && peek(:newl, 2) && peek(:header_alt, 3)
             parse_header_alt
-          elsif peek(:text) || peek(:bold)
+          elsif peek(:link)
+            parse_link
+          elsif peek_any(:text, :bold)
             parse_paragraph
           else
             raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
@@ -98,7 +114,7 @@ module Compiler
 
     def parse_header
       token = consume(:header)
-      consume(:endl)
+      consume(:newl)
       NodeHeader.new(size: token.attrs[:size], text: token.attrs[:text])
     end
 
@@ -106,25 +122,40 @@ module Compiler
       text = consume(:text).attrs[:text]
       consume(:newl)
       size = consume(:header_alt).attrs[:size]
-      consume(:endl)
+      consume(:newl)
       NodeHeader.new(size:, text:)
     end
 
     def parse_paragraph
       para = NodePara.new(children: [])
 
-      while peek(:text) || peek(:bold)
+      while peek_any(:text, :bold, :link)
         para.children << (
           if peek(:text)
             NodeText.new(text: consume(:text).attrs[:text])
           elsif peek(:bold)
             NodeText.new(text: consume(:bold).attrs[:text], bold: true)
+          elsif peek(:link)
+            parse_link
+          else
+            raise "Unexpected next token: \n#{JSON.pretty_generate(@tks)}"
           end
         )
       end
-      consume(:endl)
+      consume(:newl)
       
       para
+    end
+
+    def parse_link
+      link = consume(:link)
+      consume(:newl)
+      NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
+    end
+
+    def peek_any(*types)
+      types.each { return true if peek it }
+      return false
     end
 
     def peek(type, depth = 1)
@@ -155,6 +186,8 @@ module Compiler
           case node
           when Parser::NodeHeader
             gen_header(node)
+          when Parser::NodeLink
+            gen_link(node)
           when Parser::NodePara
             gen_paragraph(node)
           else
@@ -173,7 +206,26 @@ module Compiler
     end
 
     def gen_paragraph(node)
-      "<p>#{node.children.map { gen_text it }.join('')}</p>"
+      html = String.new('<p>')
+
+      node.children.each do |child|
+        html << (
+          case child
+          when Parser::NodeText
+            gen_text(child)
+          when Parser::NodeLink
+            gen_link(child)
+          else
+            raise "Invalid node: #{child}"
+          end
+        )
+      end
+
+      html << '</p>'
+    end
+
+    def gen_link(node)
+      "<a href=\"#{node.href}\">#{node.text}</a>"
     end
 
     def gen_text(node)

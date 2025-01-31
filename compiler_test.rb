@@ -5,9 +5,17 @@ require_relative 'compiler.rb'
 module Compiler
   class TestCompile < Minitest::Test
     [
+      {md: '', expected: ''},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_empty_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
+
+    [
       {md: 'text', expected: '<p>text</p>'},
       {md: 'text #', expected: '<p>text #</p>'},
-    ].each do |tc, i|
+    ].each_with_index do |tc, i|
       define_method("test_compile_paragraph_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
@@ -49,6 +57,14 @@ module Compiler
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
+
+    [
+      {md: '[text](href)', expected: '<a href="href">text</a>'},
+    ].each_with_index do |tc, i|
+      define_method("test_compile_link_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
   end
 
   class TestLexer < Minitest::Test
@@ -60,12 +76,12 @@ module Compiler
       assert_equal [], tokenize('')
     end
 
-    def test_tokenize_text
-      assert_equal [Lexer::Token.new(:text, {text: 'text'}), Lexer::Token.new(:endl)], tokenize('text')
+    def test_tokenize_paragraph
+      assert_equal [Lexer::Token.new(:text, {text: 'text'}), Lexer::Token.new(:newl)], tokenize('text')
     end
 
     def test_tokenize_header
-      assert_equal [Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:endl)], tokenize('# text')
+      assert_equal [Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:newl)], tokenize('# text')
     end
   end
 
@@ -82,14 +98,14 @@ module Compiler
       assert_equal ast_root, parse([])
     end
 
-    def test_parse_text
+    def test_parse_paragraph
       assert_equal ast_root(Parser::NodePara.new(children: [Parser::NodeText.new(text: 'text')])),
-        parse([Lexer::Token.new(:text, {text: 'text'}), Lexer::Token.new(:endl)])
+        parse([Lexer::Token.new(:text, {text: 'text'}), Lexer::Token.new(:newl)])
     end
 
     def test_parse_header
       assert_equal ast_root(Parser::NodeHeader.new(size: 1, text: 'text')),
-        parse([Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:endl)])
+        parse([Lexer::Token.new(:header, {size: 1, text: 'text'}), Lexer::Token.new(:newl)])
     end
   end
 
@@ -106,7 +122,7 @@ module Compiler
       assert_equal '', gen(ast_root)
     end
 
-    def test_gen_text
+    def test_gen_paragraph
       assert_equal '<p>text</p>', gen(ast_root(Parser::NodePara.new(children: [Parser::NodeText.new(text: 'text')])))
     end
 
