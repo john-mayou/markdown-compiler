@@ -1,0 +1,7 @@
+italic *text* and _text_
+blank lines as br
+line breaks / as br
+block quotes
+images ![alt](src)
+`code` and ```code```
+horizontal rule --- or ***
