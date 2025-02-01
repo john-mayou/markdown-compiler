@@ -66,27 +66,17 @@ module Compiler
           end
           @md.slice!(0, i + 1)
           tokenize_line cut_current_line!
+        elsif @md =~ /\A.+\n(=+|-+) */ # header alt
+          curr_line = cut_current_line!
+          next_line = cut_current_line!
+          @tks << Token.new(:header, {size: next_line.include?('=') ? 1 : 2})
+          @md.slice!(curr_line.size + 1, next_line.size)
+          tokenize_line curr_line
+          @tks << Token.new(:hr)
         elsif @md =~ /\A\n/ # new line
           @md.slice!(0, 1)
         else
-          # if there is ---+ or ===+ on the next line, this whole line is a header
-          header_line = false
-          header_size = nil
-          curr_line, next_line = @md.match(/\A(.+)\n((?:=+|-+) *)/)&.captures
-          if curr_line && next_line
-            header_line = true
-            header_size = next_line.include?('=') ? 1 : 2
-            @tks << Token.new(:header, {size: header_size})
-            @md.slice!(curr_line.size + 1, next_line.size)
-          end
-
           tokenize_line cut_current_line!
-
-          # since we've already cut out next line's chars, we have to handle the hr
-          if header_line
-            @tks << Token.new(:hr)
-            del_current_line!
-          end
         end
 
         @md.rstrip!
