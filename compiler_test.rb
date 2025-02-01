@@ -111,7 +111,7 @@ module Compiler
     end
 
     [
-      {md: '![alt](src)', expected: "<img alt='alt' src='src'/>"},
+      {md: '![alt](src)', expected: '<img alt="alt" src="src"/>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_image_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -119,10 +119,10 @@ module Compiler
     end
 
     [
-      {md: '[text](href)', expected: "<p><a href='href'>text</a></p>"},
-      {md: 'before [text](href)', expected: "<p>before <a href='href'>text</a></p>"},
-      {md: '[text](href) after', expected: "<p><a href='href'>text</a> after</p>"},
-      {md: 'before [text](href) after', expected: "<p>before <a href='href'>text</a> after</p>"},
+      {md: '[text](href)', expected: '<p><a href="href">text</a></p>'},
+      {md: 'before [text](href)', expected: '<p>before <a href="href">text</a></p>'},
+      {md: '[text](href) after', expected: '<p><a href="href">text</a> after</p>'},
+      {md: 'before [text](href) after', expected: '<p>before <a href="href">text</a> after</p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_link_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -250,7 +250,7 @@ module Compiler
           code line 2
           ```
         MD
-        expected: String.new("<pre><code class=''>code line 1\ncode line 2\n</code></pre>")
+        expected: String.new("<pre><code class=\"\">code line 1\ncode line 2\n</code></pre>")
       },
       {
         md: <<~MD,
@@ -258,7 +258,7 @@ module Compiler
           code with lang
           ```
         MD
-        expected: String.new("<pre><code class='ruby'>code with lang\n</code></pre>")
+        expected: String.new("<pre><code class=\"ruby\">code with lang\n</code></pre>")
       }
     ].each_with_index do |tc, i|
       define_method("test_compile_code_block_#{i}") do
@@ -267,12 +267,12 @@ module Compiler
     end
 
     [
-      {md: '`syntax`', expected: "<p><code class=''>syntax</code></p>"},
-      {md: 'before`syntax`', expected: "<p>before<code class=''>syntax</code></p>"},
-      {md: 'beforebefore before`syntax`', expected: "<p>beforebefore before<code class=''>syntax</code></p>"},
-      {md: '`syntax`after', expected: "<p><code class='after'>syntax</code></p>"},
-      {md: '`syntax`after afterafter', expected: "<p><code class='after'>syntax</code> afterafter</p>"},
-      {md: '`syntax``syntax 2`', expected: "<p><code class=''>syntax``syntax 2</code></p>"},
+      {md: '`syntax`', expected: '<p><code class="">syntax</code></p>'},
+      {md: 'before`syntax`', expected: '<p>before<code class="">syntax</code></p>'},
+      {md: 'beforebefore before`syntax`', expected: '<p>beforebefore before<code class="">syntax</code></p>'},
+      {md: '`syntax`after', expected: '<p><code class="after">syntax</code></p>'},
+      {md: '`syntax`after afterafter', expected: '<p><code class="after">syntax</code> afterafter</p>'},
+      {md: '`syntax``syntax 2`', expected: '<p><code class="">syntax``syntax 2</code></p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_code_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])

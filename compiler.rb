@@ -412,7 +412,7 @@ module Compiler
     end
 
     def gen_code_block(node)
-      "<pre><code class='#{node.lang}'>#{node.code}</code></pre>"
+      "<pre><code class=\"#{escape_html(node.lang)}\">#{node.code}</code></pre>"
     end
 
     def gen_block_quote(node)
@@ -478,22 +478,33 @@ module Compiler
     end
 
     def gen_image(node)
-      "<img alt='#{node.alt}' src='#{node.src}'/>"
+      "<img alt=\"#{escape_html(node.alt)}\" src=\"#{escape_html(node.src)}\"/>"
     end
 
     def gen_link(node)
-      "<a href='#{node.href}'>#{node.text}</a>"
+      "<a href=\"#{escape_html(node.href)}\">#{escape_html(node.text)}</a>"
     end
 
     def gen_code(node)
-      "<code class='#{node.lang}'>#{node.code}</code>"
+      "<code class=\"#{escape_html(node.lang)}\">#{node.code}</code>"
     end
 
     def gen_text(node)
-      html = node.text
+      html = escape_html(node.text)
       node.bold && html.insert(0, '<b>') && html.insert(html.size, '</b>')
       node.italic && html.insert(0, '<i>') && html.insert(html.size, '</i>')
       html
+    end
+
+    ESCAPE_HTML_MAP = {
+      '<' => '&lt;',
+      '>' => '&gt;',
+      '&' => '&amp;',
+      '"' => '&quot;',
+    }.freeze
+
+    def escape_html(str)
+      str.gsub(/<|>|&|"/) { ESCAPE_HTML_MAP[it] || raise(RuntimeError, "Invalid char to escape: '#{it}'") }
     end
   end
 end
