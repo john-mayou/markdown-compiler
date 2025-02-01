@@ -13,6 +13,8 @@ module Compiler
 
     Token = Struct.new(:type, :attrs)
 
+    LIST_INDENT_SIZE = 4
+
     def initialize(md)
       @md = String.new(md)
     end
@@ -41,7 +43,7 @@ module Compiler
           end
           @tks << Token.new(:codeblock, {lang:, code:})
           @tks << Token.new(:newl)
-        elsif @md =~ /\A((?:> )+)/ # block quote
+        elsif @md =~ /\A(>(?: >)* ?)/ # block quote
           @tks << Token.new(:blockquote, {indent: $1.count('>')})
           @md.slice!(0, $1.size)
           tokenize_line cut_current_line!
@@ -54,11 +56,11 @@ module Compiler
           loop do
             case @md[i]
             when '*', '-'
-              @tks << Token.new(:listi, {indent: (i / 2).floor, ordered: false})
+              @tks << Token.new(:listi, {indent: (i / LIST_INDENT_SIZE).floor, ordered: false})
               i += 1 # for ' '
               break
             when /(\d)/ # only support one digit for now
-              @tks << Token.new(:listi, {indent: (i / 2).floor, ordered: true, digit: $1.to_i})
+              @tks << Token.new(:listi, {indent: (i / LIST_INDENT_SIZE).floor, ordered: true, digit: $1.to_i})
               i += 2 # for '. '
               break
             when ' '
@@ -175,7 +177,8 @@ module Compiler
     NodeHeader     = StructWithDefaults.new(:size, :children) { _set_defaults(children: -> { [] }) }
     NodeCode       = Struct.new(:lang, :code)
     NodeCodeBlock  = Struct.new(:lang, :code)
-    NodeBlockQuote = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodeQuote      = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodeQuoteItem  = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
     NodePara       = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
     NodeText       = StructWithDefaults.new(:text, :bold, :italic) { _set_defaults(bold: -> { false }, italic: -> { false }) }
     NodeHr         = Struct.new
@@ -231,18 +234,21 @@ module Compiler
 
     def parse_block_quote
       root_indent = consume(:blockquote).attrs[:indent]
-      root_block = NodeBlockQuote.new(children: parse_inline)
+      root_block = NodeQuote.new(children: [parse_quote_item])
 
       block_indent_map = {}
       block_indent_map[root_indent] = root_block
 
       while peek(:blockquote)
-        block_indent = consume(:blockquote).attrs[:indent]
+        block = consume(:blockquote)
+        next consume(:newl) if peek(:newl)
+
+        block_indent = block.attrs[:indent]
         block_node = block_indent_map[block_indent]
         if block_node
-          parse_inline.each { block_node.children << it }
+          block_node.children << parse_quote_item
         else
-          block_node = NodeBlockQuote.new(children: parse_inline)
+          block_node = NodeQuote.new(children: [parse_quote_item])
           block_indent_map[block_indent] = block_node
           block_parent = block_indent_map[block_indent - 1] || root_block
           block_parent.children << block_node
@@ -250,6 +256,10 @@ module Compiler
       end
 
       root_block
+    end
+
+    def parse_quote_item
+      NodeQuoteItem.new(children: parse_inline_block_quote)
     end
     
     def parse_list(list_indent_map = {}, last_indent = 0)
@@ -298,24 +308,43 @@ module Compiler
           nodes << NodeText.new(text: ' ')
         end
 
-        nodes << (
-          if peek(:text)
-            consume(:text).attrs => {text:, bold:, italic:}
-            NodeText.new(text:, bold:, italic:)
-          elsif peek(:code)
-            consume(:code).attrs => {lang:, code:}
-            NodeCode.new(lang:, code:)
-          elsif peek(:link)
-            link = consume(:link)
-            NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
-          else
-            raise "Unexpected next token: \n#{JSON.pretty_generate(@tks)}"
-          end
-        )
+        nodes << parse_inline_single
       end
       consume(:newl)
 
       nodes
+    end
+
+    def parse_inline_block_quote
+      nodes = []
+
+      while peek_any(*INLINE_TOKENS) || (peek(:newl) && peek(:blockquote, depth: 2) && peek_any(*INLINE_TOKENS, depth: 3))
+        if peek(:newl)
+          consume(:newl)
+          consume(:blockquote)
+          nodes << NodeText.new(text: ' ')
+        end
+
+        nodes << parse_inline_single
+      end
+      consume(:newl)
+
+      nodes
+    end
+
+    def parse_inline_single
+      if peek(:text)
+        consume(:text).attrs => {text:, bold:, italic:}
+        NodeText.new(text:, bold:, italic:)
+      elsif peek(:code)
+        consume(:code).attrs => {lang:, code:}
+        NodeCode.new(lang:, code:)
+      elsif peek(:link)
+        link = consume(:link)
+        NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
+      else
+        raise "Unexpected next token: \n#{JSON.pretty_generate(@tks)}"
+      end
     end
 
     def peek_any(*types, depth: 1)
@@ -353,7 +382,7 @@ module Compiler
             gen_header(node)
           when Parser::NodeCodeBlock
             gen_code_block(node)
-          when Parser::NodeBlockQuote
+          when Parser::NodeQuote
             gen_block_quote(node)
           when Parser::NodeList
             gen_list(node)
@@ -390,7 +419,16 @@ module Compiler
       html = String.new('<blockquote>')
 
       node.children.each do |child|
-        html << (child.is_a?(Parser::NodeBlockQuote) ? gen_block_quote(child) : "<p>#{gen_line([child])}</p>")
+        html << (
+          case child
+          when Parser::NodeQuote
+            gen_block_quote(child)
+          when Parser::NodeQuoteItem
+            "<p>#{gen_line(child.children)}</p>"
+          else
+            raise RuntimeError, "Invalid child node: #{child}"
+          end
+        )
       end
 
       html << String('</blockquote>')

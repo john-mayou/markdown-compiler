@@ -4,6 +4,8 @@ require 'open3'
 
 require_relative 'compiler.rb'
 
+UPDATE = ENV['UPDATE'] == 'true' # example
+
 class Minitest::Test
   make_my_diffs_pretty!
 end
@@ -53,6 +55,8 @@ module Compiler
     [
       {md: "text\n====", expected: '<h1>text</h1><hr>'},
       {md: "text\n----", expected: '<h2>text</h2><hr>'},
+      {md: "text\n====    ", expected: '<h1>text</h1><hr>'},
+      {md: "text\n----    ", expected: '<h2>text</h2><hr>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_header_alt_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -68,6 +72,10 @@ module Compiler
       {md: '__text_', expected: '<p>_<i>text</i></p>'},
       {md: '*text**', expected: '<p><i>text</i>*</p>'},
       {md: '_text__', expected: '<p><i>text</i>_</p>'},
+      {md: 'before **text**', expected: '<p>before <b>text</b></p>'},
+      {md: '**text** after', expected: '<p><b>text</b> after</p>'},
+      {md: 'before **text** after', expected: '<p>before <b>text</b> after</p>'},
+      {md: '(**text**)', expected: '<p>(<b>text</b>)</p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_emphasis_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -83,6 +91,10 @@ module Compiler
       {md: '_text', expected: '<p>_text</p>'},
       {md: 'text*', expected: '<p>text*</p>'},
       {md: 'text_', expected: '<p>text_</p>'},
+      {md: 'before *text*', expected: '<p>before <i>text</i></p>'},
+      {md: '*text* after', expected: '<p><i>text</i> after</p>'},
+      {md: 'before *text* after', expected: '<p>before <i>text</i> after</p>'},
+      {md: '(*text*)', expected: '<p>(<i>text</i>)</p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_italic_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -108,6 +120,9 @@ module Compiler
 
     [
       {md: '[text](href)', expected: "<p><a href='href'>text</a></p>"},
+      {md: 'before [text](href)', expected: "<p>before <a href='href'>text</a></p>"},
+      {md: '[text](href) after', expected: "<p><a href='href'>text</a> after</p>"},
+      {md: 'before [text](href) after', expected: "<p>before <a href='href'>text</a> after</p>"},
     ].each_with_index do |tc, i|
       define_method("test_compile_link_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -148,9 +163,9 @@ module Compiler
         md: <<~MD,
           * 1
           - 2
-            * 2.1
-              - 2.1.1
-            * 2.2
+              * 2.1
+                  - 2.1.1
+              * 2.2
           - 3
         MD
         expected: unformat_html(String.new(<<~HTML)),
@@ -197,9 +212,9 @@ module Compiler
         md: <<~MD,
           1. 1
           2. 2
-            1. 2.1
-              1. 2.1.1
-            2. 2.2
+              1. 2.1
+                  1. 2.1.1
+              2. 2.2
           3. 3
         MD
         expected: unformat_html(String.new(<<~HTML)),
@@ -272,6 +287,18 @@ module Compiler
         MD
         expected: unformat_html(String.new(<<~HTML))
           <blockquote>
+            <p>line 1 line 2</p>
+          </blockquote>
+        HTML
+      },
+      {
+        md: <<~MD,
+          > line 1
+          >
+          > line 2
+        MD
+        expected: unformat_html(String.new(<<~HTML))
+          <blockquote>
             <p>line 1</p>
             <p>line 2</p>
           </blockquote>
@@ -280,9 +307,13 @@ module Compiler
       {
         md: <<~MD,
           > line 1
+          >
           > > subline 1.1
+          > >
           > > > subsubline 1.1.1
+          > >
           > > subline 1.2
+          >
           > line 2
         MD
         expected: unformat_html(String.new(<<~HTML))
@@ -332,7 +363,7 @@ module Compiler
         Lexer::Token.new(:newl),
       ], tokenize(<<~MD)
         1. 1
-          - 1.1
+            - 1.1
       MD
     end
 
@@ -392,17 +423,33 @@ module Compiler
     end
 
     def test_parse_block_quote
-      assert_equal ast_root(Parser::NodeBlockQuote.new(children: [
-        Parser::NodeText.new(text: 'line 1'),
-        Parser::NodeBlockQuote.new(children: [Parser::NodeText.new(text: 'subline 1.1')]),
-        Parser::NodeText.new(text: 'line 2'),
+      assert_equal ast_root(Parser::NodeQuote.new(children: [
+        Parser::NodeQuoteItem.new(children: [
+          Parser::NodeText.new(text: 'line 1'),
+          Parser::NodeText.new(text: ' '),
+          Parser::NodeText.new(text: 'line 2'),
+        ])
       ])),
         parse([
           Lexer::Token.new(:blockquote, {indent: 1}),
           Lexer::Token.new(:text, {text: 'line 1', bold: false, italic: false}),
           Lexer::Token.new(:newl),
-          Lexer::Token.new(:blockquote, {indent: 2}),
-          Lexer::Token.new(:text, {text: 'subline 1.1', bold: false, italic: false}),
+          Lexer::Token.new(:blockquote, {indent: 1}),
+          Lexer::Token.new(:text, {text: 'line 2', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
+        ])
+    end
+
+    def test_parse_block_quote_2
+      assert_equal ast_root(Parser::NodeQuote.new(children: [
+        Parser::NodeQuoteItem.new(children: [Parser::NodeText.new(text: 'line 1')]),
+        Parser::NodeQuoteItem.new(children: [Parser::NodeText.new(text: 'line 2')])
+      ])),
+        parse([
+          Lexer::Token.new(:blockquote, {indent: 1}),
+          Lexer::Token.new(:text, {text: 'line 1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
+          Lexer::Token.new(:blockquote, {indent: 1}),
           Lexer::Token.new(:newl),
           Lexer::Token.new(:blockquote, {indent: 1}),
           Lexer::Token.new(:text, {text: 'line 2', bold: false, italic: false}),
@@ -447,6 +494,22 @@ module Compiler
             ])
           ])
         ])))
+    end
+  end
+
+  class TestExample < Minitest::Test
+    def test_example
+      html = Compiler.compile(File.read('testdata/example.txt'))
+      html, err, status = Open3.capture3("echo '#{html}' | prettier --parser html")
+      if !status.success?
+        raise SystemCallError, err
+      end
+
+      if UPDATE
+        File.write('testdata/example.html', html)
+      end
+
+      assert_equal File.read('testdata/example.html'), html
     end
   end
 end

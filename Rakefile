@@ -1,9 +1,13 @@
 task :default => :test
 
 task :test do
-  if method = ENV['TEST']
-    Dir.glob('./*_test.rb').each { system("ruby #{it} --name #{method}") }
-  else
-    Dir.glob('./*_test.rb').each { require it }
-  end
+  env = ''
+  env << 'UPDATE=true' if ENV['UPDATE']
+
+  arg = ''
+  arg << " --name #{ENV['TEST']}" if ENV['TEST']
+
+  files = Dir.glob('./*_test.rb').join(' ')
+
+  system("#{env} ruby #{files} #{arg}")
 end
