@@ -40,6 +40,10 @@ module Compiler
             end
           end
           @tks << Token.new(:codeblock, {lang:, code:})
+        elsif @md =~ /\A((?:> )+)/ # block quote
+          @tks << Token.new(:blockquote, {indent: $1.count('>')})
+          @md.slice!(0, $1.size)
+          tokenize_remaining_line
         elsif @md =~ /\A(\*{3,}[\* ]*|-{3,}[- ]*)$/ # hr
           @tks << Token.new(:hr)
           @md.slice!(0, $1.size)
@@ -170,17 +174,18 @@ module Compiler
       end
     end
 
-    NodeRoot      = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
-    NodeHeader    = StructWithDefaults.new(:size, :children) { _set_defaults(children: -> { [] }) }
-    NodeCode      = Struct.new(:lang, :code)
-    NodeCodeBlock = Struct.new(:lang, :code)
-    NodePara      = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
-    NodeText      = StructWithDefaults.new(:text, :bold, :italic) { _set_defaults(bold: -> { false }, italic: -> { false }) }
-    NodeHr        = Struct.new
-    NodeImage     = Struct.new(:alt, :src)
-    NodeLink      = Struct.new(:text, :href)
-    NodeList      = StructWithDefaults.new(:ordered, :children) { _set_defaults(children: -> { [] }) }
-    NodeListItem  = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodeRoot       = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodeHeader     = StructWithDefaults.new(:size, :children) { _set_defaults(children: -> { [] }) }
+    NodeCode       = Struct.new(:lang, :code)
+    NodeCodeBlock  = Struct.new(:lang, :code)
+    NodeBlockQuote = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodePara       = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodeText       = StructWithDefaults.new(:text, :bold, :italic) { _set_defaults(bold: -> { false }, italic: -> { false }) }
+    NodeHr         = Struct.new
+    NodeImage      = Struct.new(:alt, :src)
+    NodeLink       = Struct.new(:text, :href)
+    NodeList       = StructWithDefaults.new(:ordered, :children) { _set_defaults(children: -> { [] }) }
+    NodeListItem   = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
 
     def initialize(tks)
       @tks = tks
@@ -194,6 +199,8 @@ module Compiler
           ast.children << parse_header
         elsif peek(:codeblock)
           ast.children << parse_code_block
+        elsif peek(:blockquote)
+          ast.children << parse_block_quote
         elsif peek(:hr)
           ast.children << parse_hr
         elsif peek(:listi)
@@ -223,6 +230,29 @@ module Compiler
       token = consume(:codeblock)
       consume(:newl)
       NodeCodeBlock.new(lang: token.attrs[:lang], code: token.attrs[:code])
+    end
+
+    def parse_block_quote
+      root_indent = consume(:blockquote).attrs[:indent]
+      root_block = NodeBlockQuote.new(children: parse_remaining_line)
+
+      block_indent_map = {}
+      block_indent_map[root_indent] = root_block
+
+      while peek(:blockquote)
+        block_indent = consume(:blockquote).attrs[:indent]
+        block_node = block_indent_map[block_indent]
+        if block_node
+          parse_remaining_line.each { block_node.children << it }
+        else
+          block_node = NodeBlockQuote.new(children: parse_remaining_line)
+          block_indent_map[block_indent] = block_node
+          block_parent = block_indent_map[block_indent - 1] || root_block
+          block_parent.children << block_node
+        end
+      end
+
+      root_block
     end
     
     def parse_list(list_indent_map = {}, last_indent = 0)
@@ -324,6 +354,8 @@ module Compiler
             gen_header(node)
           when Parser::NodeCodeBlock
             gen_code_block(node)
+          when Parser::NodeBlockQuote
+            gen_block_quote(node)
           when Parser::NodeList
             gen_list(node)
           when Parser::NodeHr
@@ -353,6 +385,16 @@ module Compiler
 
     def gen_code_block(node)
       "<pre><code class='#{node.lang}'>#{node.code}</code></pre>"
+    end
+
+    def gen_block_quote(node)
+      html = String.new('<blockquote>')
+
+      node.children.each do |child|
+        html << (child.is_a?(Parser::NodeBlockQuote) ? gen_block_quote(child) : "<p>#{gen_line([child])}</p>")
+      end
+
+      html << String('</blockquote>')
     end
 
     def gen_list(node)

@@ -259,6 +259,47 @@ module Compiler
         assert_equal tc[:expected], Compiler.compile(tc[:md])
       end
     end
+
+    [
+      {
+        md: <<~MD,
+          > line 1
+          > line 2
+        MD
+        expected: unformat_html(String.new(<<~HTML))
+          <blockquote>
+            <p>line 1</p>
+            <p>line 2</p>
+          </blockquote>
+        HTML
+      },
+      {
+        md: <<~MD,
+          > line 1
+          > > subline 1.1
+          > > > subsubline 1.1.1
+          > > subline 1.2
+          > line 2
+        MD
+        expected: unformat_html(String.new(<<~HTML))
+          <blockquote>
+            <p>line 1</p>
+            <blockquote>
+              <p>subline 1.1</p>
+              <blockquote>
+                <p>subsubline 1.1.1</p>
+              </blockquote>
+              <p>subline 1.2</p>
+            </blockquote>
+            <p>line 2</p>
+          </blockquote>
+        HTML
+      }
+    ].each_with_index do |tc, i|
+      define_method("test_compile_block_quote_#{i}") do
+        assert_equal tc[:expected], Compiler.compile(tc[:md])
+      end
+    end
   end
 
   class TestLexer < Minitest::Test
@@ -340,6 +381,25 @@ module Compiler
           Lexer::Token.new(:newl),
           Lexer::Token.new(:listi, {indent: 1, ordered: false}),
           Lexer::Token.new(:text, {text: '1.1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
+        ])
+    end
+
+    def test_parse_block_quote
+      assert_equal ast_root(Parser::NodeBlockQuote.new(children: [
+        Parser::NodeText.new(text: 'line 1'),
+        Parser::NodeBlockQuote.new(children: [Parser::NodeText.new(text: 'subline 1.1')]),
+        Parser::NodeText.new(text: 'line 2'),
+      ])),
+        parse([
+          Lexer::Token.new(:blockquote, {indent: 1}),
+          Lexer::Token.new(:text, {text: 'line 1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
+          Lexer::Token.new(:blockquote, {indent: 2}),
+          Lexer::Token.new(:text, {text: 'subline 1.1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
+          Lexer::Token.new(:blockquote, {indent: 1}),
+          Lexer::Token.new(:text, {text: 'line 2', bold: false, italic: false}),
           Lexer::Token.new(:newl),
         ])
     end
