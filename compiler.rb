@@ -75,7 +75,6 @@ module Compiler
           curr_line = cut_current_line!
           next_line = cut_current_line!
           @tks << Token.new(:header, {size: next_line.include?('=') ? 1 : 2})
-          @md.slice!(curr_line.size + 1, next_line.size)
           tokenize_line curr_line
           @tks << Token.new(:hr)
           @tks << Token.new(:newl)
