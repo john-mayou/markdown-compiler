@@ -25,25 +25,24 @@ module Compiler
         if @md =~ /\A(######|#####|####|###|##|#) / # header
           @tks << Token.new(:header, {size: $1.size})
           @md.slice!(0, $1.size + 1)
-          tokenize_remaining_line
-          @tks << Token.new(:newl)
+          tokenize_line cut_current_line!
           @tks << Token.new(:hr)
         elsif @md =~ /\A```(.*?) *$/ # code block
           lang = $1 || ''
-          slice_current_line!
+          del_current_line!
           code = String.new
           while ch = @md[0]
             code << ch
             @md.slice!(0, 1)
             if @md =~ /\A``` *$/ # closing code block
-              break slice_current_line!
+              break del_current_line!
             end
           end
           @tks << Token.new(:codeblock, {lang:, code:})
         elsif @md =~ /\A((?:> )+)/ # block quote
           @tks << Token.new(:blockquote, {indent: $1.count('>')})
           @md.slice!(0, $1.size)
-          tokenize_remaining_line
+          tokenize_line cut_current_line!
         elsif @md =~ /\A(\*{3,}[\* ]*|-{3,}[- ]*)$/ # hr
           @tks << Token.new(:hr)
           @md.slice!(0, $1.size)
@@ -66,9 +65,8 @@ module Compiler
             end
           end
           @md.slice!(0, i + 1)
-          tokenize_remaining_line
+          tokenize_line cut_current_line!
         elsif @md =~ /\A\n/ # new line
-          @tks << Token.new(:newl)
           @md.slice!(0, 1)
         else
           # if there is ---+ or ===+ on the next line, this whole line is a header
@@ -82,27 +80,16 @@ module Compiler
             @md.slice!(curr_line.size + 1, next_line.size)
           end
 
-          tokenize_remaining_line
+          tokenize_line cut_current_line!
 
-          # since we've already cut out next line's chars, we have to handle the hr and newls
+          # since we've already cut out next line's chars, we have to handle the hr
           if header_line
-            @tks << Token.new(:newl)
             @tks << Token.new(:hr)
-            while ch = @md[0]
-              @md.slice!(0, 1)
-              if ch == "\n"
-                @tks << Token.new(:newl)
-                break
-              end
-            end
+            del_current_line!
           end
         end
 
         @md.rstrip!
-      end
-        
-      if @tks.last && @tks.last.type != :newl
-        @tks << Token.new(:newl)
       end
 
       @tks
@@ -110,16 +97,13 @@ module Compiler
 
     private
 
-    def tokenize_remaining_line
-      line = String.new
-      @md.each_char { it == "\n" ? break : line << it }
-      @md.slice!(0, line.size)
+    def tokenize_line(line)
       curr = String.new
       curr_push = lambda {
         @tks << Token.new(:text, {text: curr, bold: false, italic: false})
         curr = String.new
       }
-      while !line.empty?
+      while !line.empty? && line != "\n"
         if (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*{3}[^\*]+?\*{3}|_{3}[^_]+?_{3})/, 1] # bold and italic
           curr_push.call if !curr.empty?
           @tks << Token.new(:text, {text: match.gsub(/[\*_]/, ''), bold: true, italic: true})
@@ -152,7 +136,14 @@ module Compiler
       curr_push.call if !curr.empty?
     end
 
-    def slice_current_line!
+    def cut_current_line!
+      line = String.new
+      @md.each_char { line << it; break if it == "\n" }
+      @md.slice!(0, line.size)
+      line
+    end
+
+    def del_current_line!
       while ch = @md[0]
         @md.slice!(0, 1)
         break if ch == "\n"
@@ -211,6 +202,8 @@ module Compiler
           ast.children << parse_link
         elsif peek_any(:text, :code)
           ast.children << parse_paragraph
+        elsif peek(:newl)
+          next consume(:newl)
         else
           raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
         end
@@ -223,18 +216,17 @@ module Compiler
 
     def parse_header
       token = consume(:header)
-      NodeHeader.new(size: token.attrs[:size], children: parse_remaining_line)
+      NodeHeader.new(size: token.attrs[:size], children: parse_inline)
     end
 
     def parse_code_block
       token = consume(:codeblock)
-      consume(:newl)
       NodeCodeBlock.new(lang: token.attrs[:lang], code: token.attrs[:code])
     end
 
     def parse_block_quote
       root_indent = consume(:blockquote).attrs[:indent]
-      root_block = NodeBlockQuote.new(children: parse_remaining_line)
+      root_block = NodeBlockQuote.new(children: parse_inline)
 
       block_indent_map = {}
       block_indent_map[root_indent] = root_block
@@ -243,9 +235,9 @@ module Compiler
         block_indent = consume(:blockquote).attrs[:indent]
         block_node = block_indent_map[block_indent]
         if block_node
-          parse_remaining_line.each { block_node.children << it }
+          parse_inline.each { block_node.children << it }
         else
-          block_node = NodeBlockQuote.new(children: parse_remaining_line)
+          block_node = NodeBlockQuote.new(children: parse_inline)
           block_indent_map[block_indent] = block_node
           block_parent = block_indent_map[block_indent - 1] || root_block
           block_parent.children << block_node
@@ -267,7 +259,7 @@ module Compiler
             list_indent_map[list_indent - 1].children.last.children << list_node
           end
         end
-        list_node.children << NodeListItem.new(children: parse_remaining_line)
+        list_node.children << NodeListItem.new(children: parse_inline)
         parse_list(list_indent_map, list_indent)
       end
 
@@ -276,30 +268,29 @@ module Compiler
 
     def parse_hr
       consume(:hr)
-      consume(:newl)
       NodeHr.new
     end
 
     def parse_image
       image = consume(:image)
-      consume(:newl)
       NodeImage.new(alt: image.attrs[:alt], src: image.attrs[:src])
     end
 
     def parse_link
       link = consume(:link)
-      consume(:newl)
       NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
     end
 
     def parse_paragraph
-      NodePara.new(children: parse_remaining_line)
+      NodePara.new(children: parse_inline)
     end
 
-    def parse_remaining_line
+    INLINE_TOKENS = [:text, :code, :link].freeze
+
+    def parse_inline
       nodes = []
 
-      while peek_any(:text, :code, :link)
+      while peek_any(*INLINE_TOKENS)
         nodes << (
           if peek(:text)
             consume(:text).attrs => {text:, bold:, italic:}
@@ -314,7 +305,6 @@ module Compiler
           end
         )
       end
-      consume(:newl)
 
       nodes
     end

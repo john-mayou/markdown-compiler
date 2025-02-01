@@ -312,17 +312,15 @@ module Compiler
     end
 
     def test_tokenize_paragraph
-      assert_equal [Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}), Lexer::Token.new(:newl)], tokenize('text')
+      assert_equal [Lexer::Token.new(:text, {text: 'text', bold: false, italic: false})], tokenize('text')
     end
 
     def test_tokenize_list
       assert_equal [
         Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
         Lexer::Token.new(:text, {text: '1', bold: false, italic: false}),
-        Lexer::Token.new(:newl),
         Lexer::Token.new(:listi, {indent: 1, ordered: false}),
         Lexer::Token.new(:text, {text: '1.1', bold: false, italic: false}),
-        Lexer::Token.new(:newl),
       ], tokenize(<<~MD)
         1. 1
           - 1.1
@@ -330,21 +328,11 @@ module Compiler
     end
 
     def test_tokenize_code_block
-      assert_equal [
-        Lexer::Token.new(:codeblock, {lang: 'ruby', code: "code\n"}),
-        Lexer::Token.new(:newl),
-      ], tokenize(<<~MD)
-        ```ruby
-        code
-        ```
-      MD
+      assert_equal [Lexer::Token.new(:codeblock, {lang: 'ruby', code: "code\n"})], tokenize("```ruby\ncode\n```")
     end
 
     def test_tokenize_code
-      assert_equal [
-        Lexer::Token.new(:code, {lang: 'ruby', code: 'code'}),
-        Lexer::Token.new(:newl),
-      ], tokenize('`code`ruby')
+      assert_equal [Lexer::Token.new(:code, {lang: 'ruby', code: 'code'})], tokenize('`code`ruby')
     end
   end
 
@@ -363,7 +351,7 @@ module Compiler
 
     def test_parse_paragraph
       assert_equal ast_root(Parser::NodePara.new(children: [Parser::NodeText.new(text: 'text')])),
-        parse([Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}), Lexer::Token.new(:newl)])
+        parse([Lexer::Token.new(:text, {text: 'text', bold: false, italic: false})])
     end
 
     def test_parse_list
@@ -378,10 +366,8 @@ module Compiler
         parse([
           Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
           Lexer::Token.new(:text, {text: '1', bold: false, italic: false}),
-          Lexer::Token.new(:newl),
           Lexer::Token.new(:listi, {indent: 1, ordered: false}),
           Lexer::Token.new(:text, {text: '1.1', bold: false, italic: false}),
-          Lexer::Token.new(:newl),
         ])
     end
 
@@ -394,13 +380,10 @@ module Compiler
         parse([
           Lexer::Token.new(:blockquote, {indent: 1}),
           Lexer::Token.new(:text, {text: 'line 1', bold: false, italic: false}),
-          Lexer::Token.new(:newl),
           Lexer::Token.new(:blockquote, {indent: 2}),
           Lexer::Token.new(:text, {text: 'subline 1.1', bold: false, italic: false}),
-          Lexer::Token.new(:newl),
           Lexer::Token.new(:blockquote, {indent: 1}),
           Lexer::Token.new(:text, {text: 'line 2', bold: false, italic: false}),
-          Lexer::Token.new(:newl),
         ])
     end
   end
