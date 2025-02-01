@@ -22,11 +22,9 @@ module Compiler
 
       @md.lstrip!
       while !@md.empty?
-        if @md =~ /\A((?:######|#####|####|###|##|#) .+)/ # header
-          size = 0
-          size += 1 while $1[size] == '#'
-          @tks << Token.new(:header, {size:})
-          @md.slice!(0, size + 1)
+        if @md =~ /\A(######|#####|####|###|##|#) / # header
+          @tks << Token.new(:header, {size: $1.size})
+          @md.slice!(0, $1.size + 1)
           tokenize_remaining_line
           @tks << Token.new(:newl)
           @tks << Token.new(:hr)
@@ -65,7 +63,7 @@ module Compiler
           end
           @md.slice!(0, i + 1)
           tokenize_remaining_line
-        elsif @md =~ /\A\n/
+        elsif @md =~ /\A\n/ # new line
           @tks << Token.new(:newl)
           @md.slice!(0, 1)
         else
