@@ -27,6 +27,7 @@ module Compiler
           @md.slice!(0, $1.size + 1)
           tokenize_line cut_current_line!
           @tks << Token.new(:hr)
+          @tks << Token.new(:newl)
         elsif @md =~ /\A```(.*?) *$/ # code block
           lang = $1 || ''
           del_current_line!
@@ -39,13 +40,15 @@ module Compiler
             end
           end
           @tks << Token.new(:codeblock, {lang:, code:})
+          @tks << Token.new(:newl)
         elsif @md =~ /\A((?:> )+)/ # block quote
           @tks << Token.new(:blockquote, {indent: $1.count('>')})
           @md.slice!(0, $1.size)
           tokenize_line cut_current_line!
         elsif @md =~ /\A(\*{3,}[\* ]*|-{3,}[- ]*)$/ # hr
           @tks << Token.new(:hr)
-          @md.slice!(0, $1.size)
+          @tks << Token.new(:newl)
+          @md.slice!(0, $1.size + 1)
         elsif @md =~ /\A *(([0-9]\.)|(\*|-)) / # list
           i = 0
           loop do
@@ -73,13 +76,19 @@ module Compiler
           @md.slice!(curr_line.size + 1, next_line.size)
           tokenize_line curr_line
           @tks << Token.new(:hr)
+          @tks << Token.new(:newl)
         elsif @md =~ /\A\n/ # new line
+          @tks << Token.new(:newl)
           @md.slice!(0, 1)
         else
           tokenize_line cut_current_line!
         end
 
         @md.rstrip!
+      end
+
+      if @tks.last && @tks.last.type != :newl
+        @tks << Token.new(:newl)
       end
 
       @tks
@@ -93,7 +102,7 @@ module Compiler
         @tks << Token.new(:text, {text: curr, bold: false, italic: false})
         curr = String.new
       }
-      while !line.empty? && line != "\n"
+      while !line.empty?
         if (line.start_with?('*') || line.start_with?('_')) && match = line[/\A(\*{3}[^\*]+?\*{3}|_{3}[^_]+?_{3})/, 1] # bold and italic
           curr_push.call if !curr.empty?
           @tks << Token.new(:text, {text: match.gsub(/[\*_]/, ''), bold: true, italic: true})
@@ -118,6 +127,10 @@ module Compiler
           curr_push.call if !curr.empty?
           @tks << Token.new(:code, {lang: $2 || '', code: $1})
           line.slice!(0, $1.size + $2.size + 2) # `` = 2
+        elsif line.start_with?("\n")
+          curr_push.call if !curr.empty?
+          @tks << Token.new(:newl)
+          line.slice!(0, 1)
         else
           curr << line[0]
           line.slice!(0, 1)
@@ -128,9 +141,12 @@ module Compiler
 
     def cut_current_line!
       line = String.new
-      @md.each_char { line << it; break if it == "\n" }
+      @md.each_char do |ch|
+        line << ch
+        break if ch == "\n"
+      end
       @md.slice!(0, line.size)
-      line
+      line.end_with?("\n") ? line : line << "\n" # for consistency
     end
 
     def del_current_line!
@@ -188,12 +204,10 @@ module Compiler
           ast.children << parse_list
         elsif peek(:image)
           ast.children << parse_image
-        elsif peek(:link)
-          ast.children << parse_link
-        elsif peek_any(:text, :code)
+        elsif peek_any(:text, :code, :link)
           ast.children << parse_paragraph
         elsif peek(:newl)
-          next consume(:newl)
+          consume(:newl)
         else
           raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
         end
@@ -211,6 +225,7 @@ module Compiler
 
     def parse_code_block
       token = consume(:codeblock)
+      consume(:newl)
       NodeCodeBlock.new(lang: token.attrs[:lang], code: token.attrs[:code])
     end
 
@@ -258,17 +273,14 @@ module Compiler
 
     def parse_hr
       consume(:hr)
+      consume(:newl)
       NodeHr.new
     end
 
     def parse_image
       image = consume(:image)
+      consume(:newl)
       NodeImage.new(alt: image.attrs[:alt], src: image.attrs[:src])
-    end
-
-    def parse_link
-      link = consume(:link)
-      NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
     end
 
     def parse_paragraph
@@ -280,7 +292,12 @@ module Compiler
     def parse_inline
       nodes = []
 
-      while peek_any(*INLINE_TOKENS)
+      while peek_any(*INLINE_TOKENS) || (peek(:newl) && peek_any(*INLINE_TOKENS, depth: 2))
+        if peek(:newl)
+          consume(:newl)
+          nodes << NodeText.new(text: ' ')
+        end
+
         nodes << (
           if peek(:text)
             consume(:text).attrs => {text:, bold:, italic:}
@@ -289,22 +306,24 @@ module Compiler
             consume(:code).attrs => {lang:, code:}
             NodeCode.new(lang:, code:)
           elsif peek(:link)
-            parse_link
+            link = consume(:link)
+            NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
           else
             raise "Unexpected next token: \n#{JSON.pretty_generate(@tks)}"
           end
         )
       end
+      consume(:newl)
 
       nodes
     end
 
-    def peek_any(*types)
-      types.each { return true if peek it }
+    def peek_any(*types, depth: 1)
+      types.each { return true if peek(it, depth:) }
       return false
     end
 
-    def peek(type, depth = 1)
+    def peek(type, depth: 1)
       (token = @tks[depth - 1]) && token.type == type
     end
 
@@ -398,17 +417,17 @@ module Compiler
     def gen_line(nodes)
       html = String.new
 
-      nodes.each do |child|
+      nodes.each do |node|
         html << (
-          case child
+          case node
           when Parser::NodeLink
-            gen_link(child)
+            gen_link(node)
           when Parser::NodeCode
-            gen_code(child)
+            gen_code(node)
           when Parser::NodeText
-            gen_text(child)
+            gen_text(node)
           else
-            raise "Invalid node: #{child}"
+            raise "Invalid node: #{node}"
           end
         )
       end

@@ -27,6 +27,10 @@ module Compiler
     [
       {md: 'text', expected: '<p>text</p>'},
       {md: 'text #', expected: '<p>text #</p>'},
+      {md: 'text text', expected: '<p>text text</p>'},
+      {md: "line 1\nline 2", expected: '<p>line 1 line 2</p>'},
+      {md: "line 1\n\nline 2", expected: '<p>line 1</p><p>line 2</p>'},
+      {md: "line 1\n\n\nline 2", expected: '<p>line 1</p><p>line 2</p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_paragraph_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -103,7 +107,7 @@ module Compiler
     end
 
     [
-      {md: '[text](href)', expected: "<a href='href'>text</a>"},
+      {md: '[text](href)', expected: "<p><a href='href'>text</a></p>"},
     ].each_with_index do |tc, i|
       define_method("test_compile_link_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
@@ -312,15 +316,20 @@ module Compiler
     end
 
     def test_tokenize_paragraph
-      assert_equal [Lexer::Token.new(:text, {text: 'text', bold: false, italic: false})], tokenize('text')
+      assert_equal [
+        Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}),
+        Lexer::Token.new(:newl),
+      ], tokenize('text')
     end
 
     def test_tokenize_list
       assert_equal [
         Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
         Lexer::Token.new(:text, {text: '1', bold: false, italic: false}),
+        Lexer::Token.new(:newl),
         Lexer::Token.new(:listi, {indent: 1, ordered: false}),
         Lexer::Token.new(:text, {text: '1.1', bold: false, italic: false}),
+        Lexer::Token.new(:newl),
       ], tokenize(<<~MD)
         1. 1
           - 1.1
@@ -328,11 +337,17 @@ module Compiler
     end
 
     def test_tokenize_code_block
-      assert_equal [Lexer::Token.new(:codeblock, {lang: 'ruby', code: "code\n"})], tokenize("```ruby\ncode\n```")
+      assert_equal [
+        Lexer::Token.new(:codeblock, {lang: 'ruby', code: "code\n"}),
+        Lexer::Token.new(:newl),
+      ], tokenize("```ruby\ncode\n```")
     end
 
     def test_tokenize_code
-      assert_equal [Lexer::Token.new(:code, {lang: 'ruby', code: 'code'})], tokenize('`code`ruby')
+      assert_equal [
+        Lexer::Token.new(:code, {lang: 'ruby', code: 'code'}),
+        Lexer::Token.new(:newl),
+      ], tokenize('`code`ruby')
     end
   end
 
@@ -351,7 +366,10 @@ module Compiler
 
     def test_parse_paragraph
       assert_equal ast_root(Parser::NodePara.new(children: [Parser::NodeText.new(text: 'text')])),
-        parse([Lexer::Token.new(:text, {text: 'text', bold: false, italic: false})])
+        parse([
+          Lexer::Token.new(:text, {text: 'text', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
+        ])
     end
 
     def test_parse_list
@@ -366,8 +384,10 @@ module Compiler
         parse([
           Lexer::Token.new(:listi, {indent: 0, ordered: true, digit: 1}),
           Lexer::Token.new(:text, {text: '1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
           Lexer::Token.new(:listi, {indent: 1, ordered: false}),
           Lexer::Token.new(:text, {text: '1.1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
         ])
     end
 
@@ -380,10 +400,13 @@ module Compiler
         parse([
           Lexer::Token.new(:blockquote, {indent: 1}),
           Lexer::Token.new(:text, {text: 'line 1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
           Lexer::Token.new(:blockquote, {indent: 2}),
           Lexer::Token.new(:text, {text: 'subline 1.1', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
           Lexer::Token.new(:blockquote, {indent: 1}),
           Lexer::Token.new(:text, {text: 'line 2', bold: false, italic: false}),
+          Lexer::Token.new(:newl),
         ])
     end
   end
