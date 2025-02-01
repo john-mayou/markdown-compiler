@@ -57,6 +57,12 @@ module Compiler
       {md: "text\n----", expected: '<h2>text</h2><hr>'},
       {md: "text\n====    ", expected: '<h1>text</h1><hr>'},
       {md: "text\n----    ", expected: '<h2>text</h2><hr>'},
+      {md: "lbefore\ntext\n====", expected: '<p>lbefore</p><h1>text</h1><hr>'},
+      {md: "lbefore\ntext\n----", expected: '<p>lbefore</p><h2>text</h2><hr>'},
+      {md: "\ntext\n====\nlafter", expected: '<h1>text</h1><hr><p>lafter</p>'},
+      {md: "\ntext\n----\nlafter", expected: '<h2>text</h2><hr><p>lafter</p>'},
+      {md: "lbefore\ntext\n====\nlafter", expected: '<p>lbefore</p><h1>text</h1><hr><p>lafter</p>'},
+      {md: "lbefore\ntext\n----\nlafter", expected: '<p>lbefore</p><h2>text</h2><hr><p>lafter</p>'},
     ].each_with_index do |tc, i|
       define_method("test_compile_header_alt_#{i}") do
         assert_equal tc[:expected], Compiler.compile(tc[:md])
