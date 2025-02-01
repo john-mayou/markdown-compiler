@@ -159,59 +159,30 @@ module Compiler
   end
 
   class Parser
-    
-    NodeRoot = Struct.new(:children) do
-      def initialize(**kwargs)
-        super(**kwargs)
-        self.children ||= []
+
+    class StructWithDefaults < Struct
+      def initialize(*args, **kwargs)
+        super(*args, **kwargs)
+        self.class._get_defaults.each { |k, v| self[k] ||= v.call }
+      end
+
+      class << self
+        def _set_defaults(**defaults) @_defaults = defaults end
+        def _get_defaults; @_defaults || {} end
       end
     end
 
-    NodeHeader = Struct.new(:size, :children) do
-      def initialize(**kwargs)
-        super(**kwargs)
-        self.children ||= []
-      end
-    end
-
-    NodeCode = Struct.new(:lang, :code)
-
+    NodeRoot      = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodeHeader    = StructWithDefaults.new(:size, :children) { _set_defaults(children: -> { [] }) }
+    NodeCode      = Struct.new(:lang, :code)
     NodeCodeBlock = Struct.new(:lang, :code)
-
-    NodePara = Struct.new(:children) do
-      def initialize(**kwargs)
-        super(**kwargs)
-        self.children ||= []
-      end
-    end
-
-    NodeText = Struct.new(:text, :bold, :italic) do
-      def initialize(**kwargs)
-        super(**kwargs)
-        self.bold ||= false
-        self.italic ||= false
-      end
-    end
-
-    NodeHr = Struct.new
-
-    NodeImage = Struct.new(:alt, :src)
-
-    NodeLink = Struct.new(:text, :href)
-
-    NodeList = Struct.new(:ordered, :children) do
-      def initialize(**kwargs)
-        super(**kwargs)
-        self.children ||= []
-      end
-    end
-
-    NodeListItem = Struct.new(:children) do
-      def initialize(**kwargs)
-        super(**kwargs)
-        self.children ||= []
-      end
-    end
+    NodePara      = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
+    NodeText      = StructWithDefaults.new(:text, :bold, :italic) { _set_defaults(bold: -> { false }, italic: -> { false }) }
+    NodeHr        = Struct.new
+    NodeImage     = Struct.new(:alt, :src)
+    NodeLink      = Struct.new(:text, :href)
+    NodeList      = StructWithDefaults.new(:ordered, :children) { _set_defaults(children: -> { [] }) }
+    NodeListItem  = StructWithDefaults.new(:children) { _set_defaults(children: -> { [] }) }
 
     def initialize(tks)
       @tks = tks
