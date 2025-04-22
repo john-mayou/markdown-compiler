@@ -13,7 +13,7 @@ module Compiler
 
     Token = Struct.new(:type, :attrs)
 
-    LIST_INDENT_SIZE = 4
+    LIST_INDENT_SIZE = 2
 
     def initialize(md)
       @md = String.new(md)
@@ -261,23 +261,31 @@ module Compiler
       NodeQuoteItem.new(children: parse_inline_block_quote)
     end
     
-    def parse_list(list_indent_map = {}, last_indent = 0)
+    def parse_list
+      root = NodeList.new(ordered: consume(:listi).attrs[:ordered])
+      root.children << NodeListItem.new(children: parse_inline)
+      list_stack = [{node: root, indent: 0}]
+
       while peek(:listi)
-        list_token = consume(:listi)
-        list_indent = [last_indent + 1, list_token.attrs[:indent]].min # only allow 1 additional level at a time
-        list_node = list_indent_map[list_indent]
-        if !list_node
-          list_node = NodeList.new(ordered: list_token.attrs[:ordered])
-          list_indent_map[list_indent] = list_node
-          if list_indent != 0
-            list_indent_map[list_indent - 1].children.last.children << list_node
+        curr_token = consume(:listi)
+        curr_indent = [list_stack[-1][:indent] + 1, curr_token.attrs[:indent]].min # only allow 1 additional level at a time
+        last_indent = list_stack[-1][:indent]
+        if curr_indent > last_indent
+          node = NodeList.new(ordered: curr_token.attrs[:ordered])
+          node.children << NodeListItem.new(children: parse_inline)
+          list_stack[-1][:node].children.last.children << node
+          list_stack << {node:, indent: curr_indent}
+        elsif curr_indent < last_indent
+          while list_stack[-1][:indent] > curr_indent
+            list_stack.pop()
           end
+          list_stack[-1][:node].children << NodeListItem.new(children: parse_inline)
+        else
+          list_stack[-1][:node].children << NodeListItem.new(children: parse_inline)
         end
-        list_node.children << NodeListItem.new(children: parse_inline)
-        parse_list(list_indent_map, list_indent)
       end
 
-      list_indent_map[0]
+      root
     end
 
     def parse_hr
