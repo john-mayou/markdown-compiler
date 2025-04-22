@@ -1,5 +1,3 @@
-require 'json'
-
 module Compiler
   class << self
     def compile(md)
@@ -116,15 +114,15 @@ module Compiler
           curr_push.call if !curr.empty?
           @tks << Token.new(:text, {text: match.gsub(/[\*_]/, ''), bold: false, italic: true})
           line.slice!(0, match.size)
-        elsif line.start_with?('![') && line =~ /\A!\[(.+)\]\((.*)\)/ # image
+        elsif line.start_with?('![') && line =~ /\A!\[(.*)\]\((.*)\)/ # image
           curr_push.call if !curr.empty?
           @tks << Token.new(:image, {alt: $1, src: $2})
           line.slice!(0, $1.size + $2.size + 5) # ![]() = 5
-        elsif line.start_with?('[') && line =~ /\A\[(.+)\]\((.*)\)/ # link
+        elsif line.start_with?('[') && line =~ /\A\[(.*)\]\((.*)\)/ # link
           curr_push.call if !curr.empty?
           @tks << Token.new(:link, {text: $1, href: $2})
           line.slice!(0, $1.size + $2.size + 4) # []() = 4
-        elsif line.start_with?('`') && line =~ /\A`(.+)`([a-z]*)/ # code
+        elsif line.start_with?('`') && line =~ /\A`(.+?)`([a-z]*)/ # code
           curr_push.call if !curr.empty?
           @tks << Token.new(:code, {lang: $2 || '', code: $1})
           line.slice!(0, $1.size + $2.size + 2) # `` = 2
@@ -211,7 +209,7 @@ module Compiler
         elsif peek(:newl)
           consume(:newl)
         else
-          raise RuntimeError, "Unable to parse tokens:\n#{JSON.pretty_generate(@tks)}"
+          raise RuntimeError, "Unable to parse tokens:\n#{@tks}"
         end
       end
 
@@ -350,7 +348,7 @@ module Compiler
         link = consume(:link)
         NodeLink.new(text: link.attrs[:text], href: link.attrs[:href])
       else
-        raise "Unexpected next token: \n#{JSON.pretty_generate(@tks)}"
+        raise "Unexpected next token: \n#{@tks}"
       end
     end
 
